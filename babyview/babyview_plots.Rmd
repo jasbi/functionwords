@@ -1,0 +1,413 @@
+---
+title: "BabyView Plots and Growth Curves"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(arrow)
+```
+
+# Load Data
+
+**Option A** — run the full pipeline (requires feather files from `babyview_func_extract.Rmd`).
+Run chunks `load` and all three frequency chunks, then `save_results`.
+
+**Option B** — load pre-computed results (no feather files needed).
+Skip everything below and run only the `load_results` chunk, then go straight to Plots.
+
+```{r load}
+# OPTION A: load from feather files
+# comment out the one you don't want to run
+babyview_tokens_processed <-
+  read_feather("../processed_data/babyview_tokens_processed.feather")
+
+babyview_tokens_contract_processed <-
+  read_feather("../processed_data/babyview_tokens_contract_processed.feather")
+```
+
+```{r load_results, eval=FALSE}
+# OPTION B: load pre-computed frequency tables (skip feather + computation chunks)
+load("../processed_data/babyview_results.RData")
+```
+
+# Computing Cumulative Relative Frequencies
+
+## Function vs. Content Words
+
+```{r syncategory_relfreq}
+syncategory_relfreq <-
+  babyview_tokens_contract_processed %>%
+  group_by(syncategory, age, speaker) %>%
+  summarise(freq = n(), .groups = "drop") %>%
+  group_by(speaker, age) %>%
+  mutate(total = sum(freq), relfreq = freq / total, pct = relfreq * 100) %>%
+  group_by(syncategory, speaker) %>%
+  arrange(age) %>%
+  mutate(
+    cum_freq           = cumsum(freq),
+    cum_total          = cumsum(total),
+    cumulative_relfreq = cum_freq / cum_total,
+    cumulative_pct     = cumulative_relfreq * 100
+  )
+```
+
+## Individual Function Words
+
+```{r functionword_relfreq}
+functionword_relfreq <-
+  babyview_tokens_contract_processed %>%
+  group_by(word, age, speaker) %>%
+  summarise(freq = n(), .groups = "drop") %>%
+  group_by(speaker, age) %>%
+  mutate(total = sum(freq), relfreq = freq / total, ppt = relfreq * 1000) %>%
+  group_by(word, speaker) %>%
+  arrange(age) %>%
+  mutate(
+    cum_freq           = cumsum(freq),
+    cum_total          = cumsum(total),
+    cumulative_relfreq = cum_freq / cum_total,
+    cumulative_ppt     = cumulative_relfreq * 1000
+  )
+```
+
+## Function Word Semantic Categories
+
+```{r wordcategory_relfreq}
+wordcategory_relfreq <-
+  babyview_tokens_contract_processed %>%
+  group_by(word_category, age, speaker) %>%
+  summarise(freq = n(), .groups = "drop") %>%
+  group_by(speaker, age) %>%
+  mutate(total = sum(freq), relfreq = freq / total, ppt = relfreq * 1000) %>%
+  group_by(word_category, speaker) %>%
+  arrange(age) %>%
+  mutate(
+    cum_freq           = cumsum(freq),
+    cum_total          = cumsum(total),
+    cumulative_relfreq = cum_freq / cum_total
+  )
+```
+
+## Save Results
+
+```{r save_results}
+# Saves the three frequency tables so collaborators can load them without feather files
+save(syncategory_relfreq, functionword_relfreq, wordcategory_relfreq,
+     file = "../processed_data/babyview_results.RData")
+```
+
+# Plots
+
+## Function vs. Content Word Production
+
+```{r function_vs_content}
+syncategory_relfreq %>%
+  filter(speaker %in% c("child", "parent")) %>%
+  ggplot(aes(age, pct)) +
+  geom_point() +
+  facet_grid(speaker ~ syncategory) +
+  theme_bw() +
+  xlab("Age (Months)") + ylab("Percentage")
+```
+
+## Word Plot Helper
+
+```{r word_plot_fn}
+word_plot <- function(w, min_age = NULL, speakers = c("child", "parent")) {
+  d <- functionword_relfreq %>%
+    filter(word == w, speaker %in% speakers)
+  if (!is.null(min_age)) d <- filter(d, age > min_age)
+  ggplot(d, aes(age, cumulative_ppt)) +
+    geom_point() +
+    facet_grid(. ~ speaker) +
+    theme_bw() +
+    xlab("Age (Months)") + ylab("Cumulative Parts Per Thousand") +
+    ggtitle(w)
+}
+```
+
+## Distribution of Individual Function Words
+
+### Negation
+
+```{r negation}
+word_plot("no")
+word_plot("not")
+word_plot("n't")
+```
+
+### Yes
+
+```{r yes}
+word_plot("yes")
+```
+
+### Connectives
+
+```{r connectives}
+word_plot("and")
+word_plot("or",      min_age = 20)
+word_plot("if")
+word_plot("but")
+word_plot("because")
+word_plot("unless")
+word_plot("although")
+```
+
+### Articles
+
+```{r articles}
+word_plot("the")
+word_plot("a")
+```
+
+### Demonstratives
+
+```{r demonstratives}
+word_plot("this")
+word_plot("that")
+word_plot("these")
+word_plot("those")
+```
+
+### Wh-Words
+
+```{r wh_words}
+word_plot("what")
+word_plot("who")
+word_plot("when")
+word_plot("where")
+word_plot("why")
+word_plot("how")
+word_plot("whose")
+word_plot("whom")
+```
+
+### Modals
+
+```{r modals}
+word_plot("can",   min_age = 12)
+word_plot("could")
+word_plot("need")
+word_plot("maybe")
+word_plot("might")
+word_plot("must")
+word_plot("should", min_age = 15)
+```
+
+### Quantifiers
+
+```{r quantifiers}
+word_plot("all")
+word_plot("some")
+word_plot("both")
+word_plot("each")
+word_plot("most",      min_age = 20)
+word_plot("every")
+word_plot("many")
+word_plot("none")
+word_plot("few")
+word_plot("everyone")
+word_plot("everybody")
+word_plot("everything")
+word_plot("someone",   min_age = 20)
+word_plot("somebody",  min_age = 20)
+word_plot("something")
+word_plot("everywhere")
+word_plot("somewhere")
+```
+
+### Temporal Quantifiers
+
+```{r temporal_quantifiers}
+word_plot("always")
+word_plot("sometimes")
+word_plot("usually")
+word_plot("never",  min_age = 12)
+word_plot("often")
+word_plot("seldom")
+word_plot("once")
+word_plot("twice")
+```
+
+### Temporal Connectives
+
+```{r temporal_connectives}
+word_plot("before")
+word_plot("after")
+word_plot("then")
+word_plot("until",  min_age = 21)
+word_plot("during")
+word_plot("while")
+word_plot("since")
+```
+
+### Quantity
+
+```{r quantity}
+word_plot("more")
+word_plot("less")
+word_plot("much")
+```
+
+### Cardinals
+
+```{r cardinals}
+word_plot("one")
+word_plot("two")
+word_plot("three")
+word_plot("four")
+word_plot("five")
+word_plot("six")
+word_plot("seven", min_age = 10)
+word_plot("eight")
+word_plot("nine")
+word_plot("ten")
+```
+
+### Ordinals
+
+```{r ordinals}
+word_plot("first")
+word_plot("last")
+word_plot("second", min_age = 22)
+word_plot("third")
+word_plot("fourth")
+```
+
+### Additives
+
+```{r additives}
+word_plot("again")
+word_plot("too")
+word_plot("also")
+word_plot("another")
+word_plot("still")
+word_plot("other")
+word_plot("others")
+```
+
+### Negative Polarity Items
+
+```{r NPIs}
+word_plot("any")
+word_plot("yet")
+word_plot("ever")
+word_plot("anyone",  min_age = 23)
+word_plot("anything")
+word_plot("anywhere")
+word_plot("anyway",  min_age = 15)
+```
+
+### Exclusives
+
+```{r exclusives}
+word_plot("only")
+word_plot("just")
+```
+
+### Locatives
+
+```{r locatives}
+word_plot("here")
+word_plot("there")
+word_plot("up")
+word_plot("on")
+word_plot("in")
+word_plot("out")
+word_plot("outside")
+word_plot("inside")
+word_plot("down")
+word_plot("into")
+word_plot("under")
+word_plot("above")
+word_plot("below")
+word_plot("over",   min_age = 12)
+word_plot("behind")
+word_plot("beside")
+word_plot("between")
+word_plot("beyond")
+word_plot("near")
+word_plot("onto",   min_age = 22)
+word_plot("toward")
+word_plot("along")
+word_plot("across")
+```
+
+### Other
+
+```{r other}
+word_plot("so")
+word_plot("either")
+word_plot("neither")
+word_plot("else")
+word_plot("almost")
+word_plot("already")
+word_plot("except")
+word_plot("for")
+word_plot("from")
+word_plot("to")
+word_plot("by")
+word_plot("very")
+word_plot("with")
+word_plot("without")
+word_plot("instead", min_age = 23)
+word_plot("such",    speakers = "child")
+word_plot("about")
+word_plot("whether")
+```
+
+### Pronouns
+
+```{r pronouns}
+word_plot("mine")
+word_plot("me",     min_age = 12)
+word_plot("i")
+word_plot("you")
+word_plot("your")
+word_plot("yours")
+word_plot("we")
+word_plot("our")
+word_plot("ours",   min_age = 12)
+word_plot("she")
+word_plot("her")
+word_plot("hers",   min_age = 12)
+word_plot("he")
+word_plot("his",    min_age = 12)
+word_plot("they")
+word_plot("their")
+word_plot("theirs")
+word_plot("it")
+word_plot("its")
+```
+
+### Auxiliaries
+
+```{r auxiliaries}
+word_plot("'m")
+word_plot("am")
+word_plot("is")
+word_plot("are")
+word_plot("was")
+word_plot("were")
+word_plot("do")
+word_plot("does")
+```
+
+## Word Category Overview
+
+```{r word_categories, fig.width=12, fig.height=10}
+wordcategory_relfreq %>%
+  filter(
+    word_category != "nonfunction",
+    speaker %in% c("child", "parent")
+  ) %>%
+  ggplot(aes(age, cumulative_relfreq, color = speaker)) +
+  geom_point(size = 0.8) +
+  facet_wrap(~ word_category, scales = "free_y") +
+  theme_bw() +
+  xlab("Age (Months)") + ylab("Cumulative Relative Frequency") +
+  theme(legend.position = "bottom")
+```

@@ -1,0 +1,389 @@
+---
+title: "BabyView Function Word Extraction"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(readr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(arrow)
+```
+
+# Loading BabyView Data
+
+## Early Data (younger children)
+
+```{r load_early}
+early_transcripts <- read_csv("early_data/babyview-transcripts-2025.2.csv")
+early_metadata    <- read_csv("early_data/babyview-metadata-2025.2.csv")
+early_demographics <- read_csv("early_data/babyview-demographics-2025.2.csv")
+
+# Strip BOM from any column names
+names(early_metadata)     <- str_remove_all(names(early_metadata),     "﻿")
+names(early_demographics) <- str_remove_all(names(early_demographics), "﻿")
+```
+
+```{r merge_early}
+# Extract the unique_video_id embedded at the end of each video_id
+# Format: {subject_id}_{date}_{num}_{unique_video_id}
+early_transcripts <- early_transcripts %>%
+  mutate(unique_video_id = str_extract(video_id, "[^_]+$"))
+
+# Join metadata (age, subject_id) and demographics
+early_data <- early_transcripts %>%
+  left_join(
+    early_metadata %>% select(unique_video_id, subject_id, `age (years)`),
+    by = "unique_video_id"
+  ) %>%
+  left_join(
+    early_demographics %>% select(subject_id, hispanic, ethnicity, sex),
+    by = "subject_id"
+  ) %>%
+  rename(
+    gloss     = token,
+    age_years = `age (years)`
+  ) %>%
+  mutate(source = "early")
+```
+```{r}
+glimpse(early_data)
+```
+
+## Later Data (older children)
+
+```{r load_later}
+later_transcripts <- read_csv("later_data/token_transcripts.csv")
+```
+
+```{r prep_later}
+later_data <- later_transcripts %>%
+  rename(
+    gloss      = token,
+    subject_id = pid,
+    age_years  = age
+  ) %>%
+  rename_with(~ if_else(.x == "gender", "sex", .x)) %>%
+  mutate(source = "later")
+```
+
+```{r}
+glimpse(later_data)
+```
+## Combining into One Dataset
+
+```{r combine}
+# Select common columns before combining; keep demographics for potential analysis
+babyview_tokens <- bind_rows(
+  early_data %>% select(gloss, speaker, age_years, subject_id,
+                        hispanic, ethnicity, sex, source) %>%
+    mutate(hispanic = as.character(hispanic)),
+  later_data %>% select(gloss, speaker, age_years, subject_id,
+                        hispanic, ethnicity, sex, source) %>%
+    mutate(hispanic = as.character(hispanic))
+)
+```
+
+# Token Processing
+
+## Lowercase
+
+```{r lowercase}
+babyview_tokens$gloss <- tolower(babyview_tokens$gloss)
+```
+
+## Exclusions
+
+```{r exclusions}
+n_tokens_before <- nrow(babyview_tokens)
+
+# Remove rows without age information
+babyview_tokens <- babyview_tokens %>% drop_na(age_years)
+
+n_after_age_na <- nrow(babyview_tokens)
+
+# Age cap: keep children under 6 years (72 months), consistent with CHILDES processing
+babyview_tokens <- babyview_tokens %>% filter(age_years < 6)
+
+n_after_age_cap <- nrow(babyview_tokens)
+
+exclusions <- data.frame(
+  n_before           = n_tokens_before,
+  n_after_age_na     = n_after_age_na,
+  n_after_age_cap    = n_after_age_cap,
+  removed_age_na     = n_tokens_before   - n_after_age_na,
+  removed_age_cap    = n_after_age_na    - n_after_age_cap
+)
+
+write_csv(exclusions, "../raw_data/babyview_exclusions_summary.csv")
+```
+
+## Coding Speaker Roles
+
+```{r speaker_roles}
+# Early: KCHI = key child, OCH = other child, FEM/MAL/unknown = adult
+# Later: kchild = key child, ochild = other child, radult/tadult = adult
+babyview_tokens <- babyview_tokens %>%
+  mutate(speaker = case_when(
+    speaker %in% c("KCHI", "kchild") ~ "child",
+    speaker %in% c("OCH",  "ochild") ~ "other_child",
+    speaker %in% c("FEM", "MAL", "radult", "tadult") ~ "parent",
+    TRUE ~ "unknown"
+  ))
+```
+
+## Coding Age
+
+```{r age}
+# Convert age from years to months and bin by floor, matching CHILDES `age` column
+babyview_tokens <- babyview_tokens %>%
+  mutate(
+    target_child_age = age_years * 12,
+    age = floor(target_child_age)
+  )
+```
+
+# Contractions
+
+Separate contracted morphemes so they can be counted as distinct functional morphemes,
+mirroring the approach in `processing/functionword_extraction.Rmd`.
+
+```{r contractions_prep}
+babyview_tokens_contract <- babyview_tokens %>%
+  mutate(gloss = str_replace(gloss, "cannot", "cann'ot")) %>%
+  mutate(gloss = str_replace(gloss, "can't",  "cann't")) %>%
+  mutate(gloss = str_replace(gloss, "won't",  "wont"))
+```
+
+```{r contractions_split}
+contract_pattern <- "n't|'ll|'s|'d|'m|'re|n'ot|'ve"
+
+# Rows containing a contraction
+contractions <- babyview_tokens_contract %>%
+  filter(str_detect(gloss, contract_pattern))
+
+# Rows without any contraction
+babyview_tokens_contract <- babyview_tokens_contract %>%
+  filter(!str_detect(gloss, contract_pattern))
+
+# Split contracted rows into stem row and suffix row
+contracted <- contractions %>%
+  mutate(gloss = str_remove_all(gloss, contract_pattern))
+
+suffixes <- contractions %>%
+  mutate(gloss = str_extract(gloss, contract_pattern))
+
+# Reassemble
+babyview_tokens_contract <- bind_rows(
+  babyview_tokens_contract,
+  contracted,
+  suffixes
+) %>%
+  mutate(
+    gloss = str_replace(gloss, "n'ot", "not"),
+    gloss = str_replace(gloss, "wont", "won't")
+  )
+```
+
+# Defining Function Words
+
+## Non-contracted version
+
+```{r function_words}
+babyview_tokens$word <- "nonfunction"
+
+function_words <- c(
+  "no", "not", "I'm", "you're", "he's", "she's", "it's", "we're", "they're",
+  "i've", "you've", "we've", "they've", "i'd", "you'd", "he'd", "she'd", "we'd",
+  "they'd", "i'll", "you'll", "he'll", "she'll", "we'll", "they'll",
+  "don't", "doesn't", "didn't", "isn't", "aren't", "wasn't", "weren't",
+  "haven't", "hasn't", "hadn't", "can't", "couldn't", "won't", "wouldn't", "shouldn't",
+  "yes", "and", "or", "if", "nor", "therefore",
+  "none", "some", "each", "every", "all", "most", "few", "many", "several",
+  "both", "everyone", "someone", "somebody", "everybody", "nonone",
+  "everything", "something", "nowhere", "somewhere", "everywhere",
+  "more", "less", "much", "least", "than",
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth",
+  "nineth", "tenth", "last",
+  "can", "could", "need", "may", "might", "should", "ought", "must",
+  "maybe", "perhaps", "shall", "will", "would", "won't",
+  "any", "anyone", "anything", "anywhere", "anyway", "anyways", "ever", "yet",
+  "the", "a", "an",
+  "this", "that", "these", "those",
+  "always", "usually", "seldom", "never", "sometimes", "often", "once", "twice", "now",
+  "while", "after", "before", "then", "until", "since", "whenever", "during",
+  "who", "when", "what", "whose", "where", "how", "why", "whom",
+  "on", "in", "out", "up", "down", "under", "above", "below", "along", "over",
+  "behind", "across", "beside", "between", "beyond", "into", "near", "onto",
+  "toward", "here", "through", "there",
+  "because", "but", "although",
+  "am", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "having", "do", "does", "did", "doing",
+  "i", "you", "we", "he", "she", "they", "me", "us", "her", "him", "them",
+  "my", "your", "our", "his", "their", "its",
+  "mine", "yours", "ours", "hers", "theirs",
+  "myself", "yourself", "ourselves", "himself", "herself", "yourselves", "themselves",
+  "it", "itself",
+  "again", "too", "also", "another", "other", "others", "still",
+  "only", "just", "even", "indeed",
+  "either", "neither", "whether", "as", "else", "almost", "already",
+  "except", "for", "from", "instead", "such", "with", "without",
+  "about", "by", "very", "unless", "to", "of", "at", "against",
+  "outside", "inside", "so"
+)
+
+for (x in function_words) {
+  babyview_tokens$word[babyview_tokens$gloss == x] <- x
+}
+```
+
+## Contracted version
+
+```{r function_words_contract}
+babyview_tokens_contract$word <- "nonfunction"
+
+function_words_contract <- c(
+  "no", "not", "n't", "'ll", "'s", "'d", "'m", "'re", "'ve",
+  "yes", "and", "or", "if", "nor", "therefore",
+  "none", "some", "each", "every", "all", "most", "few", "many", "several",
+  "both", "everyone", "someone", "somebody", "everybody", "nonone",
+  "everything", "something", "nowhere", "somewhere", "everywhere",
+  "more", "less", "much", "least", "than",
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth",
+  "nineth", "tenth", "last",
+  "can", "could", "need", "may", "might", "should", "ought", "must",
+  "maybe", "perhaps", "shall", "will", "would", "won't",
+  "any", "anyone", "anything", "anywhere", "anyway", "anyways", "ever", "yet",
+  "the", "a", "an",
+  "this", "that", "these", "those",
+  "always", "usually", "seldom", "never", "sometimes", "often", "once", "twice", "now",
+  "while", "after", "before", "then", "until", "since", "whenever", "during",
+  "who", "when", "what", "whose", "where", "how", "why", "whom",
+  "on", "in", "out", "up", "down", "under", "above", "below", "along", "over",
+  "behind", "across", "beside", "between", "beyond", "into", "near", "onto",
+  "toward", "here", "through", "there",
+  "because", "but", "although",
+  "am", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "having", "do", "does", "did", "doing",
+  "i", "you", "we", "he", "she", "they", "me", "us", "her", "him", "them",
+  "my", "your", "our", "his", "their", "its",
+  "mine", "yours", "ours", "hers", "theirs",
+  "myself", "yourself", "ourselves", "himself", "herself", "yourselves", "themselves",
+  "it", "itself",
+  "again", "too", "also", "another", "other", "others", "still",
+  "only", "just", "even", "indeed",
+  "either", "neither", "whether", "as", "else", "almost", "already",
+  "except", "for", "from", "instead", "such", "with", "without",
+  "about", "by", "very", "unless", "to", "of", "at", "against",
+  "outside", "inside", "so"
+)
+
+for (x in function_words_contract) {
+  babyview_tokens_contract$word[babyview_tokens_contract$gloss == x] <- x
+}
+```
+
+# Word Categories
+
+```{r word_categories}
+label_categories <- function(df) {
+  df$word_category <- "nonfunction"
+
+  logical_connectives  <- c("no", "not", "and", "or", "if", "nor", "therefore")
+  quantifiers          <- c("none", "some", "each", "every", "all", "most", "few", "many",
+                            "several", "both", "everyone", "someone", "somebody", "everybody",
+                            "nonone", "everything", "something", "nowhere", "somewhere", "everywhere")
+  quantity             <- c("more", "less", "much", "most", "least", "than")
+  cardinals            <- c("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+  ordinals             <- c("first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+                            "eighth", "nineth", "tenth", "last")
+  modals               <- c("can", "could", "need", "may", "might", "should", "ought", "must",
+                            "maybe", "perhaps", "shall", "will", "would", "won't")
+  NPI                  <- c("any", "anyone", "anything", "anywhere", "anyway", "anyways", "ever", "yet")
+  definites            <- c("the", "a", "an")
+  demonstratives       <- c("this", "that", "these", "those")
+  temporal_quantifiers <- c("always", "usually", "seldom", "never", "sometimes", "often",
+                            "once", "twice", "now")
+  temporal_connectives <- c("while", "after", "before", "then", "until", "since", "whenever", "during")
+  Wh                   <- c("who", "when", "what", "whose", "where", "how", "why", "whom")
+  locatives            <- c("on", "in", "out", "up", "down", "under", "above", "below", "along",
+                            "over", "behind", "across", "beside", "between", "beyond", "into",
+                            "near", "onto", "toward", "here", "through", "there")
+  causatives           <- c("because")
+  contrasts            <- c("but", "although")
+  auxiliaries          <- c("am", "is", "are", "was", "were", "be", "been", "being",
+                            "have", "has", "had", "having", "do", "does", "did", "doing")
+  pronouns             <- c("i", "you", "we", "he", "she", "they", "me", "us", "her", "him", "them",
+                            "my", "your", "our", "his", "their", "its",
+                            "mine", "yours", "ours", "hers", "theirs",
+                            "myself", "yourself", "ourselves", "himself", "herself",
+                            "yourselves", "themselves", "it", "itself")
+  additives            <- c("again", "too", "also", "another", "other", "others", "still")
+  exclusives           <- c("only", "just")
+  focus                <- c("even", "indeed")
+  other                <- c("either", "neither", "whether", "as", "else", "almost", "already",
+                            "except", "for", "from", "instead", "such", "with", "without",
+                            "about", "by", "very", "unless", "to", "of", "at", "against")
+
+  categories <- list(
+    "Logicals"            = logical_connectives,
+    "Quantifiers"         = quantifiers,
+    "Quantity"            = quantity,
+    "Cardinals"           = cardinals,
+    "Ordinals"            = ordinals,
+    "Modals"              = modals,
+    "NPI"                 = NPI,
+    "Definites"           = definites,
+    "Demonstratives"      = demonstratives,
+    "Temporal Quantifiers"= temporal_quantifiers,
+    "Temporal Connectives"= temporal_connectives,
+    "Wh"                  = Wh,
+    "Locatives"           = locatives,
+    "Causal Connectives"  = causatives,
+    "Contrast Connectives"= contrasts,
+    "auxiliaries"         = auxiliaries,
+    "Pronouns"            = pronouns,
+    "Additives"           = additives,
+    "Exclusives"          = exclusives,
+    "Focus Particles"     = focus,
+    "Other"               = other
+  )
+
+  for (cat in names(categories)) {
+    df$word_category[df$gloss %in% categories[[cat]]] <- cat
+  }
+
+  df
+}
+```
+
+```{r apply_categories}
+babyview_tokens          <- label_categories(babyview_tokens)
+babyview_tokens_contract <- label_categories(babyview_tokens_contract)
+```
+
+## Contracted version: also label n't and clitic suffixes
+
+```{r contract_logicals}
+babyview_tokens_contract$word_category[babyview_tokens_contract$gloss == "n't"] <- "Logicals"
+```
+
+# Syntactic Category
+
+```{r syncategory}
+babyview_tokens$syncategory <- "Function"
+babyview_tokens$syncategory[babyview_tokens$word_category == "nonfunction"] <- "nonfunction"
+
+babyview_tokens_contract$syncategory <- "Function"
+babyview_tokens_contract$syncategory[babyview_tokens_contract$word_category == "nonfunction"] <- "nonfunction"
+```
+
+# Saving Output
+
+```{r save}
+write_feather(babyview_tokens,          "../processed_data/babyview_tokens_processed.feather")
+write_feather(babyview_tokens_contract, "../processed_data/babyview_tokens_contract_processed.feather")
+```
