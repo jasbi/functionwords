@@ -1,8 +1,8 @@
 english_tokens_processed <-
-  read_feather("processed_data/english_tokens_processed.feather")
+  read_feather("../processed_data/english_tokens_processed.feather")
 
 english_tokens_contract_processed <-
-  read_feather("processed_data/english_tokens_contract_processed.feather")
+  read_feather("../processed_data/english_tokens_contract_processed.feather")
 
 selected_function_words <- c("the", "and", "no", "not", "i", "you", "can", "have", "do", "it")
 

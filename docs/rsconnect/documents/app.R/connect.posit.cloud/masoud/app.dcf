@@ -1,0 +1,10 @@
+name: app
+title:
+username: masoud
+account: masoud
+server: connect.posit.cloud
+hostUrl: https://api.connect.posit.cloud/v1
+appId: 019e3848-f598-1868-c835-4cf21332a053
+bundleId:
+url:
+version: 1
