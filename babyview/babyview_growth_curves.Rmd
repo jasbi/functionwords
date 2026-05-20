@@ -9,7 +9,6 @@ population-level cumulative PPT trajectories and Bayesian Gompertz growth curves
 for the same 10 selected function words.
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(arrow)
 library(feather)
@@ -27,10 +26,10 @@ babyview_tokens_contract_processed <-
 
 ```{r function_words}
 selected_function_words <- c("the", "and", "no", "not", "i", "you", "can", "have", "do", "it")
-function_words <- intersect(
+function_words <- as.character(intersect(
   selected_function_words,
-  unique(babyview_tokens_contract_processed$word)
-)
+  unique(as.character(babyview_tokens_contract_processed$word))
+))
 cat("Function words present in BabyView:\n")
 print(function_words)
 ```
@@ -182,10 +181,11 @@ build_gompertz_results <- function(word_vec, traj_tbl, relfreq_tbl) {
     }
   }
 
-  list(
-    fitted = bind_rows(fitted_list),
-    onset  = bind_rows(onset_list)
-  )
+  fitted_df <- bind_rows(fitted_list)
+  onset_df  <- bind_rows(onset_list)
+  if ("word" %in% names(fitted_df)) fitted_df <- fitted_df %>% mutate(word = as.character(word))
+  if ("word" %in% names(onset_df))  onset_df  <- onset_df  %>% mutate(word = as.character(word))
+  list(fitted = fitted_df, onset = onset_df)
 }
 
 gompertz_results              <- build_gompertz_results(function_words, babyview_pop_traj_data, functionword_relfreq)
@@ -231,7 +231,11 @@ for (w in function_words) {
     filter(word == w, is.finite(fitted)) %>%
     arrange(target_child_age)
 
-  onset_row <- babyview_gompertz_onset %>% filter(word == w)
+  onset_row <- if ("word" %in% names(babyview_gompertz_onset)) {
+    babyview_gompertz_onset %>% filter(word == w)
+  } else {
+    tibble()
+  }
   onset_label <- if (nrow(onset_row) > 0 && is.finite(onset_row$estimate[1])) {
     sprintf("Onset: %.1f mo [%.2f, %.2f]",
             onset_row$estimate[1], onset_row$q2_5[1], onset_row$q97_5[1])
