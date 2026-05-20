@@ -1,6 +1,5 @@
 library(shiny)
 library(bslib)
-library(childesr)
 library(tidyverse)
 library(ggplot2)
 library(plotly)
