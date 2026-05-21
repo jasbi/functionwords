@@ -1,0 +1,42 @@
+name: Deploy to shinyapps.io
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+
+      - name: Install rsconnect and dependencies
+        run: |
+          install.packages(c("rsconnect", "shiny", "bslib", "tidyverse", "ggplot2",
+                             "feather", "RColorBrewer", "purrr", "yaml", "childesr"))
+        shell: Rscript {0}
+
+      - name: Deploy to shinyapps.io
+        env:
+          SHINYAPPS_ACCOUNT: ${{ secrets.SHINYAPPS_ACCOUNT }}
+          SHINYAPPS_TOKEN: ${{ secrets.SHINYAPPS_TOKEN }}
+          SHINYAPPS_SECRET: ${{ secrets.SHINYAPPS_SECRET }}
+        run: |
+          rsconnect::setAccountInfo(
+            name   = Sys.getenv("SHINYAPPS_ACCOUNT"),
+            token  = Sys.getenv("SHINYAPPS_TOKEN"),
+            secret = Sys.getenv("SHINYAPPS_SECRET")
+          )
+          rsconnect::deployApp(
+            appDir       = "docs",
+            appPrimaryDoc = "app.R",
+            account      = Sys.getenv("SHINYAPPS_ACCOUNT"),
+            server       = "shinyapps.io",
+            appName      = "childes-function-words",
+            forceUpdate  = TRUE
+          )
+        shell: Rscript {0}
