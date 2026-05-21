@@ -1,0 +1,300 @@
+---
+title: "BabyView Growth Curves"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Replicates the CHILDES growth curve pipeline (`docs/data_prep.R`) on BabyView data:
+population-level cumulative PPT trajectories and Bayesian Gompertz growth curves
+for the same 10 selected function words.
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(arrow)
+library(feather)
+library(brms)
+```
+
+# Load Data
+
+```{r load}
+babyview_tokens_contract_processed <-
+  read_feather("../processed_data/babyview_tokens_contract_processed.feather")
+```
+
+# Selected Function Words
+
+```{r function_words}
+selected_function_words <- c("the", "and", "no", "not", "i", "you", "can", "have", "do", "it")
+function_words <- as.character(intersect(
+  selected_function_words,
+  unique(as.character(babyview_tokens_contract_processed$word))
+))
+cat("Function words present in BabyView:\n")
+print(function_words)
+```
+
+# Population-Level Cumulative PPT
+
+Mirrors `docs/data_prep.R` lines 54–82. Pools all child-speaker tokens per age bin
+(no age filter), then takes cumulative sum across age.
+
+```{r pop_traj}
+functionword_relfreq_pop <- babyview_tokens_contract_processed %>%
+  filter(speaker == "child") %>%
+  group_by(word, age) %>%
+  summarise(freq = n(), .groups = "drop") %>%
+  group_by(age) %>%
+  mutate(
+    total   = sum(freq),
+    relfreq = freq / total,
+    ppt     = relfreq * 1000
+  ) %>%
+  ungroup()
+
+babyview_pop_traj_data <- functionword_relfreq_pop %>%
+  filter(word %in% function_words) %>%
+  group_by(word) %>%
+  arrange(age, .by_group = TRUE) %>%
+  mutate(
+    cum_freq           = cumsum(freq),
+    cum_total          = cumsum(total),
+    cumulative_relfreq = cum_freq / cum_total,
+    cumulative_ppt     = cumulative_relfreq * 1000
+  ) %>%
+  ungroup() %>%
+  transmute(word, target_child_age = age, cumulative_relfreq, cumulative_ppt)
+```
+
+# Per-Word / Per-Speaker Cumulative PPT
+
+Used as input to the Gompertz fitting. Mirrors `docs/data_prep.R` lines 91–99.
+
+```{r word_speaker_relfreq}
+functionword_relfreq <- babyview_tokens_contract_processed %>%
+  group_by(word, age, speaker) %>%
+  summarise(freq = n(), .groups = "drop") %>%
+  group_by(speaker, age) %>%
+  mutate(total = sum(freq), relfreq = freq / total, ppt = relfreq * 1000) %>%
+  group_by(word, speaker) %>%
+  arrange(age) %>%
+  mutate(
+    cum_freq           = cumsum(freq),
+    cum_total          = cumsum(total),
+    cumulative_relfreq = cum_freq / cum_total,
+    cumulative_ppt     = cumulative_relfreq * 1000
+  ) %>%
+  ungroup()
+```
+
+# Gompertz Growth Curves
+
+Same nonlinear Bayesian formula and per-word priors as `docs/data_prep.R`.
+
+```{r gompertz_setup}
+gompertz_formula <- bf(
+  cumulative_ppt ~ upperAsymptote * exp(-exp(
+    ((growthRate * exp(1)) / upperAsymptote) * (lag - age) + 1
+  )),
+  upperAsymptote ~ 1,
+  growthRate     ~ 1,
+  lag            ~ 1,
+  nl = TRUE
+)
+
+get_priors <- function(w) {
+  if (w == "and") {
+    c(prior(uniform(0, 25), nlpar = "upperAsymptote", lb = 0, ub = 25),
+      prior(uniform(0, 5),  nlpar = "growthRate",     lb = 0, ub = 5),
+      prior(uniform(0, 72), nlpar = "lag",            lb = 0, ub = 72))
+  } else if (w == "the") {
+    c(prior(uniform(0, 30), nlpar = "upperAsymptote", lb = 0, ub = 30),
+      prior(uniform(0, 10), nlpar = "growthRate",     lb = 0, ub = 10),
+      prior(uniform(0, 72), nlpar = "lag",            lb = 0, ub = 72))
+  } else if (w == "no") {
+    c(prior(uniform(0, 40), nlpar = "upperAsymptote", lb = 0, ub = 40),
+      prior(uniform(0, 5),  nlpar = "growthRate",     lb = 0, ub = 5),
+      prior(uniform(0, 72), nlpar = "lag",            lb = 0, ub = 72))
+  } else if (w == "not") {
+    c(prior(uniform(0, 10), nlpar = "upperAsymptote", lb = 0, ub = 10),
+      prior(uniform(0, 5),  nlpar = "growthRate",     lb = 0, ub = 5),
+      prior(uniform(0, 72), nlpar = "lag",            lb = 0, ub = 72))
+  } else {
+    c(prior(uniform(0, 30), nlpar = "upperAsymptote", lb = 0, ub = 30),
+      prior(uniform(0, 10), nlpar = "growthRate",     lb = 0, ub = 10),
+      prior(uniform(0, 72), nlpar = "lag",            lb = 0, ub = 72))
+  }
+}
+```
+
+```{r fit_gompertz, cache=TRUE}
+build_gompertz_results <- function(word_vec, traj_tbl, relfreq_tbl) {
+  fitted_list <- vector("list", length(word_vec))
+  onset_list  <- vector("list", length(word_vec))
+
+  for (i in seq_along(word_vec)) {
+    w   <- word_vec[i]
+    dat <- relfreq_tbl %>% filter(word == w, speaker == "child")
+    ag  <- seq(min(traj_tbl$target_child_age[traj_tbl$word == w], na.rm = TRUE),
+               max(traj_tbl$target_child_age[traj_tbl$word == w], na.rm = TRUE),
+               length.out = 200)
+
+    if (nrow(dat) < 6) {
+      fitted_list[[i]] <- tibble(word = w, target_child_age = ag, fitted = NA_real_)
+      next
+    }
+
+    priors <- get_priors(w)
+    fit <- tryCatch(
+      brm(
+        formula = gompertz_formula,
+        data    = dat,
+        prior   = priors,
+        iter    = 2000,
+        chains  = 4,
+        cores   = 1,
+        control = list(adapt_delta = 0.9),
+        silent  = TRUE,
+        refresh = 0
+      ),
+      error = function(e) { message("brm failed for ", w, ": ", e$message); NULL }
+    )
+
+    if (!is.null(fit)) {
+      newdata   <- data.frame(age = ag)
+      pred_df   <- as.data.frame(fitted(fit, newdata = newdata))
+      fitted_list[[i]] <- tibble(word = w, target_child_age = ag,
+                                 fitted = as.numeric(pred_df[, "Estimate"]))
+
+      fe <- tryCatch(fixef(fit), error = function(e) NULL)
+      if (!is.null(fe) && "lag" %in% rownames(fe)) {
+        onset_list[[i]] <- tibble(
+          word     = w,
+          estimate = fe["lag", "Estimate"],
+          q2_5     = fe["lag", "Q2.5"],
+          q97_5    = fe["lag", "Q97.5"],
+          model    = "bayesian"
+        )
+      }
+    } else {
+      fitted_list[[i]] <- tibble(word = w, target_child_age = ag, fitted = NA_real_)
+    }
+  }
+
+  fitted_df <- bind_rows(fitted_list)
+  onset_df  <- bind_rows(onset_list)
+  if ("word" %in% names(fitted_df)) fitted_df <- fitted_df %>% mutate(word = as.character(word))
+  if ("word" %in% names(onset_df))  onset_df  <- onset_df  %>% mutate(word = as.character(word))
+  list(fitted = fitted_df, onset = onset_df)
+}
+
+gompertz_results              <- build_gompertz_results(function_words, babyview_pop_traj_data, functionword_relfreq)
+babyview_gompertz_fitted_ppt  <- gompertz_results$fitted
+babyview_gompertz_onset       <- gompertz_results$onset
+
+# Store fitted values as relative frequency (proportion) to match CHILDES convention
+babyview_gompertz_fitted_relfreq <- babyview_gompertz_fitted_ppt %>%
+  mutate(fitted = fitted / 1000)
+```
+
+# Population Trajectory Plots
+
+Actual cumulative PPT over age (child speech only). Mirrors `plot_population_trajectory()`
+in `docs/plots.R`.
+
+```{r pop_traj_plots, fig.width=8, fig.height=4}
+for (w in function_words) {
+  dat <- babyview_pop_traj_data %>% filter(word == w) %>% arrange(target_child_age)
+  if (nrow(dat) == 0) next
+  p <- ggplot(dat, aes(x = target_child_age, y = cumulative_ppt)) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 1.6) +
+    labs(
+      title = paste0('"', w, '" — Population Trajectory (BabyView)'),
+      x     = "Age (Months)",
+      y     = "Cumulative PPT"
+    ) +
+    theme_bw()
+  print(p)
+}
+```
+
+# Growth Curve Plots
+
+Actual data (points) overlaid with Gompertz fitted curve (line). Mirrors
+`plot_growth_curve()` in `docs/plots.R`.
+
+```{r growth_curve_plots, fig.width=8, fig.height=4}
+for (w in function_words) {
+  dat   <- babyview_pop_traj_data %>% filter(word == w) %>% arrange(target_child_age)
+  curve <- babyview_gompertz_fitted_ppt %>%
+    filter(word == w, is.finite(fitted)) %>%
+    arrange(target_child_age)
+
+  onset_row <- if ("word" %in% names(babyview_gompertz_onset)) {
+    babyview_gompertz_onset %>% filter(word == w)
+  } else {
+    tibble()
+  }
+  onset_label <- if (nrow(onset_row) > 0 && is.finite(onset_row$estimate[1])) {
+    sprintf("Onset: %.1f mo [%.2f, %.2f]",
+            onset_row$estimate[1], onset_row$q2_5[1], onset_row$q97_5[1])
+  } else {
+    "Onset: not estimated"
+  }
+
+  p <- ggplot() +
+    geom_point(
+      data = dat,
+      aes(x = target_child_age, y = cumulative_ppt, color = "Actual Data"),
+      size = 1.6
+    )
+
+  if (nrow(curve) > 0) {
+    p <- p + geom_line(
+      data = curve,
+      aes(x = target_child_age, y = fitted, color = "Fitted Values"),
+      linewidth = 1.6
+    )
+  }
+
+  p <- p +
+    scale_color_manual(
+      name   = "Legend",
+      values = c("Actual Data" = "#FDB515", "Fitted Values" = "#003262")
+    ) +
+    labs(
+      title    = paste0('"', w, '" — Growth Curve (BabyView)'),
+      subtitle = onset_label,
+      x        = "Age (Months)",
+      y        = "Cumulative Parts Per Thousand"
+    ) +
+    theme_bw()
+  print(p)
+}
+```
+
+# Onset Estimates
+
+```{r onset_table}
+if (nrow(babyview_gompertz_onset) > 0) {
+  babyview_gompertz_onset %>%
+    arrange(estimate) %>%
+    knitr::kable(digits = 2, caption = "Gompertz onset estimates (BabyView)")
+} else {
+  cat("No onset estimates produced.\n")
+}
+```
+
+# Save Output
+
+```{r save}
+write_feather(babyview_pop_traj_data,
+              "../processed_data/babyview_pop_traj_data.feather")
+write_feather(babyview_gompertz_fitted_relfreq,
+              "../processed_data/babyview_gompertz_fitted_relfreq.feather")
+write_feather(babyview_gompertz_onset,
+              "../processed_data/babyview_gompertz_onset_estimates.feather")
+
+message("Saved babyview_pop_traj_data, babyview_gompertz_fitted_relfreq, babyview_gompertz_onset_estimates to processed_data/")
+```

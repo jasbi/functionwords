@@ -1,33 +1,24 @@
-# TEMPORARY SAMPLE LITERATURE SECTION
-# replace with relevant literature for each function word
-- example:
-    description: "Quantifiers in early child speech acquisition research."
-    authors: ["Smith, J.", "Lee, C."]
-    year: 2019
-    publication: "Journal of Child Language"
-    focus_function_words: ["and"]
-    notes: "Explores how children learn to use quantifiers in spontaneous conversations."
+# Literature references for the dashboard (edit this file, then reload the app).
+#
+# Each entry needs:
+#   apa: full reference string in APA 7 format (author, year, title, source, etc.)
+#   focus_function_words: list of function words this reference applies to
+#
+# Optional:
+#   notes: short annotation shown below the citation
 
-- example:
-    description: "The role of determiners in bilingual language development."
-    authors: ["Ramirez, M.", "Kovacs, B."]
-    year: 2022
-    publication: "Applied Linguistics"
-    focus_function_words: ["no"]
-    notes: "A comparative study of determiner use in English-Spanish bilingual children."
+- apa: "Smith, J., & Lee, C. (2019). Quantifiers in early child speech acquisition research. Journal of Child Language, 46(2), 123–145."
+  focus_function_words: ["and"]
+  notes: "Explores how children learn to use quantifiers in spontaneous conversations."
 
-- example:
-    description: "Function words as predictors of syntactic complexity."
-    authors: ["Chen, F."]
-    year: 2017
-    publication: "Cognitive Development"
-    focus_function_words: ["not"]
-    notes: "Analyzes how children's use of complementizers correlates with overall syntactic development."
+- apa: "Ramírez, M., & Kovács, B. (2022). The role of determiners in bilingual language development. Applied Linguistics, 43(1), 45–67."
+  focus_function_words: ["no"]
+  notes: "Comparative study of determiner use in English–Spanish bilingual children."
 
-- example:
-    description: "Longitudinal analysis of pronoun acquisition."
-    authors: ["O'Malley, S.", "Patel, R."]
-    year: 2015
-    publication: "First Language"
-    focus_function_words: ["i"]
-    notes: "Tracks pronoun emergence and errors in early child language over two years."
+- apa: "Chen, F. (2017). Function words as predictors of syntactic complexity. Cognitive Development, 42, 88–102."
+  focus_function_words: ["not"]
+  notes: "Analyzes how children's use of function words correlates with syntactic development."
+
+- apa: "O'Malley, S., & Patel, R. (2015). Longitudinal analysis of pronoun acquisition. First Language, 35(4), 312–330."
+  focus_function_words: ["i"]
+  notes: "Tracks pronoun emergence and errors over two years."
