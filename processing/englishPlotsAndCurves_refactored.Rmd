@@ -1,0 +1,677 @@
+---
+title: "English Plots (Refactored)"
+author: "Masoud Jasbi"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(feather)
+library(brms)
+library(ggeffects)
+library(ggrepel)
+library(grid)
+library(gridExtra)
+```
+
+# Load Data
+
+```{r processedEnglishTokens}
+english_tokens_processed <- read_feather("../processed_data/english_tokens_processed.feather")
+
+english_tokens_contract_processed <-
+  read_feather("../processed_data/english_tokens_contract_processed.feather")
+```
+
+# Computing Cumulative Relative Frequencies
+
+## Function vs. Content Words
+
+Here we compute cumulative relative frequencies of function vs. content words by grouping by "syntactic category":
+
+```{r syncategory_relfreq}
+syncategory_relfreq <-
+  english_tokens_contract_processed %>%
+  group_by(syncategory, age, speaker) %>%
+  summarise(freq=n()) %>%
+  group_by(speaker, age) %>%
+  mutate(total=sum(freq), relfreq=freq/sum(freq), pct=relfreq*100) %>%
+  group_by(syncategory, speaker) %>%
+  arrange(age) %>%
+  mutate(cum_freq = cumsum(freq), cum_total= cumsum(total),
+         cumulative_relfreq = cumsum(freq)/cumsum(total),
+         cumulative_pct=cumulative_relfreq*100)
+
+saveRDS(syncategory_relfreq, "syncategory_relfreq.RDS")
+```
+
+## Individual Function Words
+
+Here we compute cumulative relative frequencies for individual function words by grouping by "word":
+
+```{r functionword_relfreq}
+functionword_relfreq <-
+  english_tokens_contract_processed %>%
+  group_by(word, age, speaker) %>%
+  summarise(freq=n()) %>%
+  group_by(speaker, age) %>%
+  mutate(total=sum(freq), relfreq=freq/sum(freq), ppt=relfreq*1000) %>%
+  group_by(word, speaker) %>%
+  arrange(age) %>%
+  mutate(cum_freq = cumsum(freq), cum_total= cumsum(total),
+         cumulative_relfreq = cumsum(freq)/cumsum(total),
+         cumulative_ppt=cumulative_relfreq*1000)
+
+saveRDS(functionword_relfreq, "functionword_relfreq.RDS")
+```
+
+## Function Word Semantic Categories
+
+Here we compute cumulative relative frequencies by semantic categories we have created. However, we have not planned any analyses of these yet.
+
+```{r wordcategory_relfreq}
+wordcategory_relfreq <-
+  english_tokens_contract_processed %>%
+  group_by(word_category, age, speaker) %>%
+  summarise(freq=n()) %>%
+  group_by(speaker, age) %>%
+  mutate(total=sum(freq), relfreq=freq/sum(freq), ppt=relfreq*1000) %>%
+  group_by(word_category, speaker) %>%
+  arrange(age) %>%
+  mutate(cum_freq = cumsum(freq), cum_total= cumsum(total),
+         cumulative_relfreq = cumsum(freq)/cumsum(total))
+
+saveRDS(wordcategory_relfreq, "wordcategory_relfreq.RDS")
+```
+
+## Function Word Syntactic Categories
+
+We have not yet looked at the emergence of different syntactic categories.
+
+# Plots and Growth Curves
+
+## Content vs. Function Word Production
+
+The graph below shows percent word category (content vs. function word) in each monthly bin during the development of the child for parents and children.
+
+```{r content_func_plot}
+p <- syncategory_relfreq %>%
+  ggplot(aes(age, pct)) +
+  geom_point() +
+  facet_grid(speaker~syncategory) +
+  theme_bw()
+
+p
+ggsave("../pics/content_func.pdf", plot=p)
+saveRDS(p, "../plots/content_func_plot.RDS")
+```
+
+```{r function_words_growth_model, include=FALSE}
+function_words_lagModel <- brm(
+  bf(pct  ~ upperAsymptote * exp(-exp(((growthRate*exp(1))/upperAsymptote)*(lag-age)+1)),
+     upperAsymptote ~ 1,
+     growthRate ~ 1,
+     lag ~ 1,
+     nl = TRUE),
+  data = filter(syncategory_relfreq, syncategory=="Function", speaker=="child"),
+  prior = c(
+    prior(uniform(0, 100), nlpar = "upperAsymptote", lb = 0, ub = 100),
+    prior(uniform(0, 10), nlpar = "growthRate", lb = 0, ub = 10),
+    prior(uniform(0, 72), nlpar = "lag", lb = 0, ub = 72)
+  ),
+  file = "../modeling/function_word_lagModel",
+  iter = 10000)
+```
+
+```{r function_word_predictions}
+function_words_predictions <- as.data.frame(fitted(function_words_lagModel))
+
+function_words_childdata <- filter(syncategory_relfreq, syncategory=="Function", speaker=="child")
+function_words_childdata$predictions <- function_words_predictions[, "Estimate"]
+
+saveRDS(function_words_childdata, "../processed_data/function_words_childdata.RDS")
+```
+
+```{r function_words_plot}
+function_words_plot <-
+  ggplot(function_words_childdata, aes(x = age, y = pct)) +
+  geom_point(aes(color = "Actual Data"), size = 2) +
+  geom_line(aes(y = predictions, color = "Fitted Values"), size = 1) +
+  scale_color_manual(name = "Legend", values = c("Actual Data" = "black", "Fitted Values" = "blue")) +
+  theme_bw() + labs(title="Function Words", x="Child Age (Month)", y="Percent") +
+  theme(legend.position = "none") +
+  theme(
+    plot.title = element_text(size = 20, hjust = 0.5),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 12)
+  )
+```
+
+## Distribution of Individual Function Words
+
+### Helper Function
+
+```{r process_word_fn}
+process_word <- function(word, model_file, upper_asymptote,
+                          gr_prior, gr_ub, adapt_delta = NULL) {
+  w <- word  # local alias avoids collision with dplyr's `word` column name
+
+  # Comparison plot (child + adult, faceted)
+  p_comparison <- functionword_relfreq %>%
+    filter(word == w) %>%
+    ggplot(aes(age, cumulative_ppt)) +
+    geom_point() +
+    facet_grid(.~speaker) +
+    theme_bw() +
+    xlab("Age (Months)") + ylab("Cumulative Parts Per Thousand")
+  print(p_comparison)
+
+  # Build priors using prior() via eval(parse()) so the expression is identical
+  # to what the original hard-coded calls produce, preserving the brms model hash
+  # and allowing cached .rds fits to load without refitting.
+  priors <- c(
+    eval(parse(text = paste0(
+      'prior(uniform(0, ', upper_asymptote, '), nlpar = "upperAsymptote", lb = 0, ub = ', upper_asymptote, ')'))),
+    eval(parse(text = paste0(
+      'prior(uniform(0, ', gr_prior, '), nlpar = "growthRate", lb = 0, ub = ', gr_ub, ')'))),
+    prior(uniform(0, 72), nlpar = "lag", lb = 0, ub = 72)
+  )
+
+  # Optional adapt_delta: only pass control when specified
+  ctrl <- if (!is.null(adapt_delta) && !is.na(adapt_delta))
+    list(adapt_delta = adapt_delta) else NULL
+
+  lag_model <- brm(
+    bf(cumulative_ppt ~ upperAsymptote * exp(-exp(((growthRate*exp(1))/upperAsymptote)*(lag-age)+1)),
+       upperAsymptote ~ 1,
+       growthRate ~ 1,
+       lag ~ 1,
+       nl = TRUE),
+    data = filter(functionword_relfreq, word == w, speaker == "child"),
+    prior = priors,
+    control = ctrl,
+    file = model_file,
+    iter = 10000
+  )
+
+  # Predictions and save
+  child_data <- filter(functionword_relfreq, word == w, speaker == "child")
+  child_data$predictions <- as.data.frame(fitted(lag_model))[, "Estimate"]
+  saveRDS(child_data,
+          paste0("../processed_data/",
+                 gsub("_lagModel$", "", basename(model_file)),
+                 "_childdata.RDS"))
+
+  # Prediction plot: capitalize first letter, but keep special forms unchanged
+  word_title <- if (word %in% c("n't", "'m")) word else
+    paste0(toupper(substring(word, 1, 1)), substring(word, 2))
+
+  word_plot <- ggplot(child_data, aes(x = age, y = cumulative_ppt)) +
+    geom_point(aes(color = "Actual Data"), size = 2) +
+    geom_line(aes(y = predictions, color = "Fitted Values"), size = 1) +
+    scale_color_manual(name = "Legend",
+                       values = c("Actual Data" = "black", "Fitted Values" = "blue")) +
+    theme_bw() +
+    labs(title = word_title, x = "", y = "") +
+    theme(legend.position = "none",
+          plot.title = element_text(size = 20, hjust = 0.5),
+          axis.title.x = element_text(size = 16),
+          axis.title.y = element_text(size = 16),
+          axis.text.x  = element_text(size = 14),
+          axis.text.y  = element_text(size = 14),
+          legend.title = element_text(size = 14),
+          legend.text  = element_text(size = 12))
+  print(word_plot)
+
+  # age_of_production row as character vector (matches original rbind convention)
+  aop_row <- c(word, round(fixef(lag_model)[3, ], 1))
+
+  invisible(list(plot = word_plot, aop_row = aop_row))
+}
+```
+
+### Word Parameters Table
+
+One row per unique word, in semantic-category order matching the original. Model file paths are
+preserved exactly so brm loads cached fits instead of refitting.
+
+```{r word_params}
+word_params <- tribble(
+  ~word,       ~category,                      ~model_file,                          ~upper_asymptote, ~gr_prior, ~gr_ub, ~adapt_delta,
+  # Connectives
+  "no",        "Connectives",                  "../modeling/neg_no_lagModel",         40,    5,   5,   NA,
+  "yes",       "Connectives",                  "../modeling/yes_lagModel",            15,    5,   5,   NA,
+  "not",       "Connectives",                  "../modeling/neg_not_lagModel",        10,    5,   5,   NA,
+  "n't",       "Connectives",                  "../modeling/neg_nt_lagModel",         15,    5,   5,   NA,
+  "and",       "Connectives",                  "../modeling/and_lagModel",            25,    5,   5,   NA,
+  "or",        "Connectives",                  "../modeling/or_lagModel",              2,   10,  10,   NA,
+  "if",        "Connectives",                  "../modeling/if_lagModel",              2,    5,   5,   NA,
+  "but",       "Connectives",                  "../modeling/but_lagModel",             5,   10,  10,   NA,
+  "because",   "Connectives",                  "../modeling/because_lagModel",         5,   10,  10,   NA,
+  "unless",    "Connectives",                  "../modeling/unless_lagModel",          0.03, 10,  10,   NA,
+  # Definites and Demonstratives
+  "the",       "Definites and Demonstratives", "../modeling/the_lagModel",            30,   10,  10,   NA,
+  "a",         "Definites and Demonstratives", "../modeling/a_lagModel",              40,    5,   5,   NA,
+  "this",      "Definites and Demonstratives", "../modeling/this_lagModel",           20,    5,   5,   0.9,
+  "that",      "Definites and Demonstratives", "../modeling/that_lagModel",           30,   10,  10,   0.95,
+  "these",     "Definites and Demonstratives", "../modeling/these_lagModel",           3,   10,  10,   NA,
+  "those",     "Definites and Demonstratives", "../modeling/those_lagModel",           2,    5,   5,   0.9,
+  # Wh Words
+  "what",      "Wh Words",                     "../modeling/what_lagModel",           20,   10,  10,   0.9,
+  "who",       "Wh Words",                     "../modeling/who_lagModel",            10,    5,   5,   NA,
+  "when",      "Wh Words",                     "../modeling/when_lagModel",            5,   10,  10,   NA,
+  "where",     "Wh Words",                     "../modeling/where_lagModel",          10,   10,  10,   NA,
+  "why",       "Wh Words",                     "../modeling/why_lagModel",            10,   10,  10,   NA,
+  "how",       "Wh Words",                     "../modeling/how_lagModel",             5,   10,  10,   0.9,
+  "whose",     "Wh Words",                     "../modeling/whose_lagModel",           1,    5,   5,   0.95,
+  # Modals
+  "can",       "Modals",                       "../modeling/can_lagModel",            20,    5,   5,   NA,
+  "could",     "Modals",                       "../modeling/could_lagModel",           5,    5,   5,   NA,
+  "need",      "Modals",                       "../modeling/need_lagModel",            5,   10,  10,   NA,
+  "maybe",     "Modals",                       "../modeling/maybe_lagModel",           1,   10,  10,   0.95,
+  "might",     "Modals",                       "../modeling/might_lagModel",           1,   10,  10,   0.95,
+  "must",      "Modals",                       "../modeling/must_lagModel",            1,   10,  10,   0.9,
+  "should",    "Modals",                       "../modeling/should_lagModel",          1,   10,  10,   0.98,
+  # Individual Quantifiers
+  "all",       "Individual Quantifiers",       "../modeling/all_lagModel",            10,   10,  10,   NA,
+  "some",      "Individual Quantifiers",       "../modeling/some_lagModel",           10,   10,  10,   NA,
+  "both",      "Individual Quantifiers",       "../modeling/both_lagModel",            0.5, 10,  10,   0.99,
+  "each",      "Individual Quantifiers",       "../modeling/each_lagModel",            1,   10,  10,   0.9,
+  "most",      "Individual Quantifiers",       "../modeling/most_lagModel",            0.5, 10,  10,   0.95,
+  "every",     "Individual Quantifiers",       "../modeling/every_lagModel",           1,   10,  10,   0.95,
+  "many",      "Individual Quantifiers",       "../modeling/many_lagModel",            1,    5,   5,   0.9,
+  "none",      "Individual Quantifiers",       "../modeling/none_lagModel",            0.5, 10,  10,   NA,
+  # Temporal Quantifiers
+  "always",    "Temporal Quantifiers",         "../modeling/always_lagModel",          1,   10,  10,   NA,
+  "sometimes", "Temporal Quantifiers",         "../modeling/sometimes_lagModel",       1,   10,  10,   NA,
+  "usually",   "Temporal Quantifiers",         "../modeling/usually_lagModel",         1,    5,   5,   NA,
+  "never",     "Temporal Quantifiers",         "../modeling/never_lagModel",           1,    5,   5,   0.99,
+  "once",      "Temporal Quantifiers",         "../modeling/once_lagModel",            1,    5,   5,   0.9,
+  # Temporals
+  "before",    "Temporals",                    "../modeling/before_lagModel",          1,    5,   5,   NA,
+  "after",     "Temporals",                    "../modeling/after_lagModel",           1,    5,   5,   NA,
+  "then",      "Temporals",                    "../modeling/then_lagModel",            5,    5,   5,   NA,
+  "until",     "Temporals",                    "../modeling/until_lagModel",           1,   10,  10,   NA,
+  "while",     "Temporals",                    "../modeling/while_lagModel",           1,    5,   5,   NA,
+  # Comparatives
+  "more",      "Comparatives",                 "../modeling/more_lagModel",           10,   10,  10,   NA,
+  "less",      "Comparatives",                 "../modeling/less_lagModel",            1,    5,   5,   NA,
+  "much",      "Comparatives",                 "../modeling/much_lagModel",            1,   10,  10,   0.98,
+  # Number Words
+  "one",       "Number Words",                 "../modeling/one_lagModel",            12,    5,   5,   0.9,
+  "two",       "Number Words",                 "../modeling/two_lagModel",            12,    5,   5,   0.9,
+  "three",     "Number Words",                 "../modeling/three_lagModel",           3,    5,   5,   0.95,
+  "four",      "Number Words",                 "../modeling/four_lagModel",            2,    5,   5,   0.9,
+  "five",      "Number Words",                 "../modeling/five_lagModel",            2,    5,   5,   0.9,
+  "six",       "Number Words",                 "../modeling/six_lagModel",             1,    5,   5,   0.9,
+  "seven",     "Number Words",                 "../modeling/seven_lagModel",           1,    5,   5,   0.9,
+  "eight",     "Number Words",                 "../modeling/eight_lagModel",           1,    5,   5,   0.98,
+  "nine",      "Number Words",                 "../modeling/nine_lagModel",            1,    5,   5,   0.95,
+  "ten",       "Number Words",                 "../modeling/ten_lagModel",             1,    5,   5,   0.98,
+  # Ordinals
+  "first",     "Ordinals",                     "../modeling/first_lagModel",           1,    5,   5,   0.9,
+  "last",      "Ordinals",                     "../modeling/last_lagModel",            1,    5,   5,   0.9,
+  "second",    "Ordinals",                     "../modeling/second_lagModel",          1,    5,   5,   0.9,
+  # Additives
+  "again",     "Additives",                    "../modeling/again_lagModel",           3,   10,  10,   0.9,
+  "too",       "Additives",                    "../modeling/too_lagModel",             5,   10,  10,   0.98,
+  "also",      "Additives",                    "../modeling/also_lagModel",            1,    5,   5,   0.95,
+  "another",   "Additives",                    "../modeling/another_lagModel",         5,    5,   5,   0.95,
+  "still",     "Additives",                    "../modeling/still_lagModel",           1,    5,   5,   0.95,
+  "other",     "Additives",                    "../modeling/other_lagModel",           5,   10,  10,   0.95,
+  # Negative Polarity Items
+  "any",       "Negative Polarity Items",      "../modeling/any_lagModel",             1,   10,  10,   NA,
+  "yet",       "Negative Polarity Items",      "../modeling/yet_lagModel",             1,    5,   5,   NA,
+  "ever",      "Negative Polarity Items",      "../modeling/ever_lagModel",            1,   10,  10,   NA,
+  "anyone",    "Negative Polarity Items",      "../modeling/anyone_lagModel",          1,    5,   5,   0.98,
+  "anything",  "Negative Polarity Items",      "../modeling/anything_lagModel",        1,    5,   5,   0.9,
+  "anywhere",  "Negative Polarity Items",      "../modeling/anywhere_lagModel",        1,    5,   5,   NA,
+  "anyway",    "Negative Polarity Items",      "../modeling/anyway_lagModel",          1,    5,   5,   0.95,
+  # Exclusives
+  "only",      "Exclusives",                   "../modeling/only_lagModel",            1,    5,   5,   0.95,
+  "just",      "Exclusives",                   "../modeling/just_lagModel",            5,   10,  10,   0.95,
+  # Locatives
+  "here",      "Locatives",                    "../modeling/here_lagModel",           10,   10,  10,   0.95,
+  "there",     "Locatives",                    "../modeling/there_lagModel",          30,   10,  10,   0.95,
+  "up",        "Locatives",                    "../modeling/up_lagModel",             10,   10,  10,   NA,
+  "on",        "Locatives",                    "../modeling/on_lagModel",             20,   10,  10,   0.9,
+  "in",        "Locatives",                    "../modeling/in_lagModel",             20,   10,  10,   NA,
+  "out",       "Locatives",                    "../modeling/out_lagModel",             6,   10,  10,   0.9,
+  "down",      "Locatives",                    "../modeling/down_lagModel",           10,   10,  10,   0.9,
+  "into",      "Locatives",                    "../modeling/into_lagModel",            1,   10,  10,   0.9,
+  "under",     "Locatives",                    "../modeling/under_lagModel",           1,   10,  10,   0.9,
+  "over",      "Locatives",                    "../modeling/over_lagModel",            5,   10,  10,   0.9,
+  "behind",    "Locatives",                    "../modeling/behind_lagModel",          1,   10,  10,   0.9,
+  "near",      "Locatives",                    "../modeling/near_lagModel",            1,    5,   5,   0.9,
+  "onto",      "Locatives",                    "../modeling/onto_lagModel",            1,   10,  10,   0.9,
+  # Other
+  "either",    "Other",                        "../modeling/either_lagModel",          1,   10,  10,   0.9,
+  "else",      "Other",                        "../modeling/else_lagModel",            1,    5,   5,   0.9,
+  "almost",    "Other",                        "../modeling/almost_lagModel",          1,   10,  10,   0.9,
+  "already",   "Other",                        "../modeling/already_lagModel",         1,    5,   5,   0.95,
+  "except",    "Other",                        "../modeling/except_lagModel",          1,   10,  10,   0.9,
+  "for",       "Other",                        "../modeling/for_lagModel",             6,    5,   5,   0.9,
+  "from",      "Other",                        "../modeling/from_lagModel",            5,   10,  10,   0.9,
+  "to",        "Other",                        "../modeling/to_lagModel",             20,   10,  10,   0.9,
+  "by",        "Other",                        "../modeling/by_lagModel",              1,   10,  10,   0.9,
+  "very",      "Other",                        "../modeling/very_lagModel",            2,   10,  10,   0.9,
+  "with",      "Other",                        "../modeling/with_lagModel",            5,   10,  10,   0.9,
+  "without",   "Other",                        "../modeling/without_lagModel",         1,    5,   5,   0.9,
+  "instead",   "Other",                        "../modeling/instead_lagModel",         1,    5,   5,   0.9,
+  "such",      "Other",                        "../modeling/such_lagModel",            1,    5,   5,   0.9,
+  "about",     "Other",                        "../modeling/about_lagModel",           5,   10,  10,   0.9,
+  # Pronouns
+  "mine",      "Pronouns",                     "../modeling/mine_lagModel",            5,   10,  10,   0.9,
+  "me",        "Pronouns",                     "../modeling/me_lagModel",             10,   10,  10,   0.9,
+  "i",         "Pronouns",                     "../modeling/I_lagModel",              50,   10,  10,   0.9,
+  "you",       "Pronouns",                     "../modeling/you_lagModel",            50,   10,  10,   0.9,
+  "your",      "Pronouns",                     "../modeling/your_lagModel",           10,   10,  10,   0.9,
+  "we",        "Pronouns",                     "../modeling/we_lagModel",             10,   10,  10,   0.9,
+  "our",       "Pronouns",                     "../modeling/our_lagModel",             1,   10,  10,   0.9,
+  "ours",      "Pronouns",                     "../modeling/ours_lagModel",            1,   10,  10,   0.9,
+  "she",       "Pronouns",                     "../modeling/she_lagModel",             6,   10,  10,   0.9,
+  "her",       "Pronouns",                     "../modeling/her_lagModel",             6,   10,  10,   0.9,
+  "he",        "Pronouns",                     "../modeling/he_lagModel",             10,   10,  10,   0.9,
+  "his",       "Pronouns",                     "../modeling/his_lagModel",            10,   10,  10,   0.9,
+  "they",      "Pronouns",                     "../modeling/they_lagModel",           10,   10,  10,   0.9,
+  "their",     "Pronouns",                     "../modeling/their_lagModel",          10,   10,  10,   0.9,
+  "it",        "Pronouns",                     "../modeling/it_lagModel",             50,   10,  10,   0.9,
+  "its",       "Pronouns",                     "../modeling/its_lagModel",             1,   10,  10,   0.9,
+  "'m",        "Pronouns",                     "../modeling/m_lagModel",              10,   10,  10,   0.9,
+  # Auxiliaries
+  "am",        "Auxiliaries",                  "../modeling/am_lagModel",              1,   10,  10,   0.9,
+  "is",        "Auxiliaries",                  "../modeling/is_lagModel",             50,   10,  10,   0.9,
+  "are",       "Auxiliaries",                  "../modeling/are_lagModel",            10,   10,  10,   0.9,
+  "was",       "Auxiliaries",                  "../modeling/was_lagModel",            10,   10,  10,   0.9,
+  "were",      "Auxiliaries",                  "../modeling/were_lagModel",            2,   10,  10,   0.9,
+  "do",        "Auxiliaries",                  "../modeling/do_lagModel",             50,   10,  10,   0.9,
+  "does",      "Auxiliaries",                  "../modeling/does_lagModel",           10,   10,  10,   0.9
+)
+```
+
+### Initialize Storage
+
+```{r init_storage}
+word_plots        <- list()
+age_of_production <- NULL
+
+run_category <- function(cat_name) {
+  cat_words <- filter(word_params, category == cat_name)
+  for (i in seq_len(nrow(cat_words))) {
+    p <- cat_words[i, ]
+    result <- process_word(p$word, p$model_file, p$upper_asymptote,
+                           p$gr_prior, p$gr_ub, p$adapt_delta)
+    word_plots[[p$word]]  <<- result$plot
+    age_of_production     <<- rbind(age_of_production, result$aop_row)
+  }
+}
+```
+
+### Connectives
+
+```{r connectives, message=FALSE, warning=FALSE}
+run_category("Connectives")
+```
+
+### Definites and Demonstratives
+
+```{r definites, message=FALSE, warning=FALSE}
+run_category("Definites and Demonstratives")
+```
+
+### Wh Words
+
+```{r wh_words, message=FALSE, warning=FALSE}
+run_category("Wh Words")
+```
+
+### Modals
+
+```{r modals, message=FALSE, warning=FALSE}
+run_category("Modals")
+```
+
+### Individual Quantifiers
+
+```{r individual_quantifiers, message=FALSE, warning=FALSE}
+run_category("Individual Quantifiers")
+```
+
+### Temporal Quantifiers
+
+```{r temporal_quantifiers, message=FALSE, warning=FALSE}
+run_category("Temporal Quantifiers")
+```
+
+### Temporals
+
+```{r temporals, message=FALSE, warning=FALSE}
+run_category("Temporals")
+```
+
+### Comparatives
+
+```{r comparatives, message=FALSE, warning=FALSE}
+run_category("Comparatives")
+```
+
+### Number Words
+
+```{r number_words, message=FALSE, warning=FALSE}
+run_category("Number Words")
+```
+
+### Ordinals
+
+```{r ordinals, message=FALSE, warning=FALSE}
+run_category("Ordinals")
+```
+
+### Additives
+
+```{r additives, message=FALSE, warning=FALSE}
+run_category("Additives")
+```
+
+### Negative Polarity Items
+
+```{r negative_polarity, message=FALSE, warning=FALSE}
+run_category("Negative Polarity Items")
+```
+
+### Exclusives
+
+```{r exclusives, message=FALSE, warning=FALSE}
+run_category("Exclusives")
+```
+
+### Locatives
+
+```{r locatives, message=FALSE, warning=FALSE}
+run_category("Locatives")
+```
+
+### Other
+
+```{r other, message=FALSE, warning=FALSE}
+run_category("Other")
+```
+
+### Pronouns
+
+```{r pronouns, message=FALSE, warning=FALSE}
+run_category("Pronouns")
+```
+
+### Auxiliaries
+
+```{r auxiliaries, message=FALSE, warning=FALSE}
+run_category("Auxiliaries")
+```
+
+### Finalize Age of Production Table
+
+```{r finalize_aop}
+age_of_production <- as.data.frame(age_of_production, stringsAsFactors = FALSE)
+colnames(age_of_production) <- c("word", "Estimate", "Est.Error", "Q2.5", "Q97.5")
+rownames(age_of_production) <- NULL
+```
+
+# Collection of Some Plots
+
+```{r collection_plots}
+library(gridExtra)
+
+grid.arrange(
+  word_plots[["me"]], word_plots[["more"]], word_plots[["what"]], word_plots[["the"]],
+  word_plots[["some"]], word_plots[["and"]], word_plots[["can"]], word_plots[["in"]],
+  layout_matrix = rbind(c(1, 2), c(3, 4), c(5, 6), c(7, 8)),
+  bottom = textGrob("Age (Months)", gp = gpar(fontsize = 13)),
+  left   = textGrob("Words (Per Thousand)", gp = gpar(fontsize = 13), rot = 90))
+
+grid.arrange(
+  word_plots[["if"]], word_plots[["any"]], word_plots[["can"]], word_plots[["n't"]],
+  word_plots[["up"]], word_plots[["who"]], word_plots[["just"]], word_plots[["all"]],
+  layout_matrix = rbind(c(1, 2), c(3, 4), c(5, 6), c(7, 8)),
+  bottom = textGrob("Age (Months)", gp = gpar(fontsize = 13)),
+  left   = textGrob("Words (Per Thousand)", gp = gpar(fontsize = 13), rot = 90))
+```
+
+# Age of Production Plot
+
+```{r age_of_production_process}
+age_of_production <-
+  age_of_production %>%
+  mutate(
+    Estimate  = as.numeric(Estimate),
+    Est.Error = as.numeric(Est.Error),
+    Q2.5      = as.numeric(Q2.5),
+    Q97.5     = as.numeric(Q97.5)
+  ) %>%
+  mutate(word = fct_reorder(word, Estimate))
+
+saveRDS(age_of_production, "../processed_data/age_of_production.RDS")
+```
+
+```{r onset_age_plot}
+age_of_production <- readRDS("../processed_data/age_of_production.RDS")
+
+functionword_onsetage_plot <-
+  age_of_production %>%
+  mutate(word = fct_reorder(word, Estimate)) %>%
+  ggplot(aes(x=Estimate, y=word)) +
+  geom_pointrange(aes(xmin = Q2.5, xmax = Q97.5)) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 12), xlab="age") +
+  scale_x_continuous(breaks = seq(0, 72, by = 3)) +
+  labs(x = "Age (Months)", y="") +
+  theme(text = element_text(size = 12))
+
+functionword_onsetage_plot
+```
+
+# Wordbank MB-CDI Function Word Trajectories
+
+## English Function Word Trajectory Plots
+
+```{r cdi_load}
+cdi_data <-
+  read_csv("../raw_data/wordbank_functionword_trajectories.csv") %>%
+  gather("word", "proportion", a:how)
+
+#write_csv(cdi_data, "../processed_data/cdi_functionwords.csv")
+```
+
+```{r functionWordPlots}
+cdi_data <- read_csv("../processed_data/cdi_functionwords.csv")
+
+last_points <- cdi_data %>%
+  group_by(word) %>%
+  slice_max(order_by = age, n = 1)
+
+ggplot(cdi_data, aes(x = age, y = proportion, colour = word)) +
+  geom_line() +
+  geom_text_repel(data = last_points, aes(label = word),
+                  nudge_x = 1,
+                  direction = "y",
+                  color = "black",
+                  show.legend = FALSE) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.1)) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), legend.position = "none") +
+  labs(x = "Age (Months)", y = "Proportion")
+```
+
+```{r wordbankr_load}
+library(wordbankr)
+```
+
+```{r wordbank_api}
+eng_ws_data <- get_instrument_data(language = "English (American)",
+                                   form = "WS",
+                                   administration_info = TRUE,
+                                   item_info = TRUE)
+
+wordbank_df <- eng_ws_data %>% select(item_definition, age, produces, child_id)
+wordbank_df$item_definition <- trimws(tolower(wordbank_df$item_definition))
+
+func_wordbank <- wordbank_df[wordbank_df$item_definition %in% function_words, ]
+
+word_proportions <- func_wordbank %>%
+  group_by(item_definition, age) %>%
+  summarise(
+    total_children = n_distinct(child_id),
+    children_producing = sum(produces == TRUE),
+    proportion = children_producing / total_children,
+    .groups = 'drop'
+  )
+
+ggplot(word_proportions, aes(x = age, y = proportion, color = item_definition)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  labs(
+    title = "Proportion of Children Producing Each Word by Age",
+    x = "Age (months)",
+    y = "Proportion of Children",
+    color = "Word"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.position = "right",
+    legend.text = element_text(size = 8),
+    legend.title = element_text(size = 10),
+    legend.key.size = unit(0.5, "cm")
+  ) +
+  guides(color = guide_legend(ncol = 2))
+```
+
+## Onset Age of Production Estimates
+
+```{r cdi_onset_age}
+CDI_onset_age <-
+  cdi_data %>%
+  group_by(word) %>%
+  summarise(
+    age_above_0.1  = min(age[proportion >= 0.1],  na.rm = TRUE),
+    age_above_0.15 = min(age[proportion >= 0.15], na.rm = TRUE),
+    age_above_0.2  = min(age[proportion >= 0.2],  na.rm = TRUE)
+  )
+```
+
+```{r cdi_onset_plot}
+CDI_onset_age %>%
+  ggplot(aes(x = age_above_0.15, y = reorder(word, age_above_0.15))) +
+  geom_pointrange(aes(xmin = age_above_0.1, xmax = age_above_0.2)) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 14), xlab = "age") +
+  labs(x = "Age (Months)", y = "") +
+  scale_x_continuous(breaks = seq(min(CDI_onset_age$age_above_0.15),
+                                  max(CDI_onset_age$age_above_0.15), by = 1))
+```
