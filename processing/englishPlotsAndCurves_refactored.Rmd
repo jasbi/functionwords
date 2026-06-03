@@ -21,7 +21,8 @@ library(gridExtra)
 english_tokens_processed <- read_feather("../processed_data/english_tokens_processed.feather")
 
 english_tokens_contract_processed <-
-  read_feather("../processed_data/english_tokens_contract_processed.feather")
+  read_feather("../processed_data/english_tokens_contract_processed.feather") %>%
+  filter(speaker != "child" | age >= 12)
 ```
 
 # Computing Cumulative Relative Frequencies
@@ -201,11 +202,17 @@ process_word <- function(word, model_file, upper_asymptote,
 
   # Predictions and save
   child_data <- filter(functionword_relfreq, word == w, speaker == "child")
-  child_data$predictions <- as.data.frame(fitted(lag_model))[, "Estimate"]
+  child_data$predictions <- as.data.frame(fitted(lag_model, newdata = child_data))[, "Estimate"]
   saveRDS(child_data,
           paste0("../processed_data/",
                  gsub("_lagModel$", "", basename(model_file)),
                  "_childdata.RDS"))
+
+  # Smooth fitted curve over 200 age points for word_model_db
+  ag <- seq(min(child_data$age), max(child_data$age), length.out = 200)
+  fitted_vals <- as.data.frame(fitted(lag_model, newdata = data.frame(age = ag)))[, "Estimate"]
+  fitted_curve_tbl <- tibble(age = ag, fitted_ppt = fitted_vals) %>%
+    filter(is.finite(fitted_ppt))
 
   # Prediction plot: capitalize first letter, but keep special forms unchanged
   word_title <- if (word %in% c("n't", "'m")) word else
@@ -229,9 +236,12 @@ process_word <- function(word, model_file, upper_asymptote,
   print(word_plot)
 
   # age_of_production row as character vector (matches original rbind convention)
-  aop_row <- c(word, round(fixef(lag_model)[3, ], 1))
+  aop_row  <- c(word, round(fixef(lag_model)[3, ], 1))
+  aop_nums <- as.numeric(round(fixef(lag_model)[3, ], 1))
 
-  invisible(list(plot = word_plot, aop_row = aop_row))
+  invisible(list(plot = word_plot, aop_row = aop_row,
+                 child_data = child_data, fitted_curve = fitted_curve_tbl,
+                 aop_nums = aop_nums))
 }
 ```
 
@@ -399,6 +409,15 @@ word_params <- tribble(
 ```{r init_storage}
 word_plots        <- list()
 age_of_production <- NULL
+word_model_db     <- tibble(
+  word         = character(),
+  child_data   = list(),
+  fitted_curve = list(),
+  aop_estimate = numeric(),
+  aop_err      = numeric(),
+  aop_q2_5     = numeric(),
+  aop_q97_5    = numeric()
+)
 
 run_category <- function(cat_name) {
   cat_words <- filter(word_params, category == cat_name)
@@ -408,6 +427,16 @@ run_category <- function(cat_name) {
                            p$gr_prior, p$gr_ub, p$adapt_delta)
     word_plots[[p$word]]  <<- result$plot
     age_of_production     <<- rbind(age_of_production, result$aop_row)
+    word_model_db         <<- bind_rows(word_model_db, tibble(
+      word         = p$word,
+      child_data   = list(result$child_data),
+      fitted_curve = list(result$fitted_curve),
+      aop_estimate = result$aop_nums[1],
+      aop_err      = result$aop_nums[2],
+      aop_q2_5     = result$aop_nums[3],
+      aop_q97_5    = result$aop_nums[4]
+    ))
+    saveRDS(word_model_db, "../processed_data/word_model_db.RDS")
   }
 }
 ```
@@ -520,6 +549,10 @@ run_category("Auxiliaries")
 age_of_production <- as.data.frame(age_of_production, stringsAsFactors = FALSE)
 colnames(age_of_production) <- c("word", "Estimate", "Est.Error", "Q2.5", "Q97.5")
 rownames(age_of_production) <- NULL
+```
+
+```{r save_word_model_db}
+saveRDS(word_model_db, "../processed_data/word_model_db.RDS")
 ```
 
 # Collection of Some Plots

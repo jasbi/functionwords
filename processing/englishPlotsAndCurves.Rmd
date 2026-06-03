@@ -106,18 +106,6 @@ We have not yet looked at the emergence of different syntactic categories
 The graph below shows percent word category (content vs. function word) in each monthly been during the development of the child for parents and children.
 
 ```{r}
-<<<<<<< HEAD:processing/englishPlotsAndCurves.Rmd
-function_words_plot <-
-  syncategory_relfreq %>%
-  filter(syncategory=="Function") %>%
-  ggplot(aes(age, pct)) +
-  geom_point() +
-  facet_grid(.~speaker) +
-  theme_bw() +
-  xlab("Age (Months)") + ylab("Percentage") + 
-  scale_y_continuous(limits = c(0, 100)) +
-  theme(text = element_text(size = 14))
-=======
 p <- syncategory_relfreq %>%
   ggplot(aes(age, pct)) +
   geom_point() +
@@ -127,7 +115,6 @@ p <- syncategory_relfreq %>%
 p
 ggsave("../pics/content_func.pdf", plot=p)
 saveRDS(p, "../plots/content_func_plot.RDS")
->>>>>>> 83828f47202f7ec9fe4d231b8101dda67bfdf7ef:processing/englishPlots.Rmd
 ```
 
 ```{r Neg_No_Growth_Model, include=FALSE}
