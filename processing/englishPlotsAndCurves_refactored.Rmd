@@ -239,6 +239,9 @@ process_word <- function(word, model_file, upper_asymptote,
   aop_row  <- c(word, round(fixef(lag_model)[3, ], 1))
   aop_nums <- as.numeric(round(fixef(lag_model)[3, ], 1))
 
+  rm(lag_model)
+  gc()
+
   invisible(list(plot = word_plot, aop_row = aop_row,
                  child_data = child_data, fitted_curve = fitted_curve_tbl,
                  aop_nums = aop_nums))
@@ -407,22 +410,32 @@ word_params <- tribble(
 ### Initialize Storage
 
 ```{r init_storage}
-word_plots        <- list()
-age_of_production <- NULL
-word_model_db     <- tibble(
-  word         = character(),
-  child_data   = list(),
-  fitted_curve = list(),
-  aop_estimate = numeric(),
-  aop_err      = numeric(),
-  aop_q2_5     = numeric(),
-  aop_q97_5    = numeric()
-)
+word_plots <- list()
+
+if (file.exists("../processed_data/word_model_db.RDS")) {
+  word_model_db <- readRDS("../processed_data/word_model_db.RDS")
+  age_of_production <- word_model_db %>%
+    select(word, Estimate = aop_estimate, Est.Error = aop_err,
+           Q2.5 = aop_q2_5, Q97.5 = aop_q97_5) %>%
+    as.data.frame(stringsAsFactors = FALSE)
+} else {
+  word_model_db <- tibble(
+    word         = character(),
+    child_data   = list(),
+    fitted_curve = list(),
+    aop_estimate = numeric(),
+    aop_err      = numeric(),
+    aop_q2_5     = numeric(),
+    aop_q97_5    = numeric()
+  )
+  age_of_production <- NULL
+}
 
 run_category <- function(cat_name) {
   cat_words <- filter(word_params, category == cat_name)
   for (i in seq_len(nrow(cat_words))) {
     p <- cat_words[i, ]
+    if (p$word %in% word_model_db$word) next
     result <- process_word(p$word, p$model_file, p$upper_asymptote,
                            p$gr_prior, p$gr_ub, p$adapt_delta)
     word_plots[[p$word]]  <<- result$plot
