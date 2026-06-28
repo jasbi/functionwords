@@ -62,3 +62,5 @@ babyview/early_data
 
 processed_data/babyview_tokens_contract_processed.feather
 processed_data/babyview_tokens_processed.feather
+
+.RDataTmp4
