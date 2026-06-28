@@ -17,7 +17,7 @@ jobs:
       - name: Install rsconnect and dependencies
         run: |
           install.packages(c("rsconnect", "shiny", "bslib", "tidyverse", "ggplot2",
-                             "feather", "RColorBrewer", "purrr", "yaml", "childesr"))
+                             "plotly", "arrow", "RColorBrewer", "purrr", "yaml"))
         shell: Rscript {0}
 
       - name: Deploy to shinyapps.io
