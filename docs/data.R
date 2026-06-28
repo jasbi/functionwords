@@ -1,4 +1,4 @@
-library(feather)
+library(arrow)
 
 selected_function_words <- c("the", "and", "no", "not", "i", "you", "can", "have", "do", "it")
 

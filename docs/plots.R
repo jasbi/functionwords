@@ -12,7 +12,7 @@ site_year <- format(Sys.Date(), "%Y")
 site_title <- "Function Word Acquisition in CHILDES 🐮"
 
 # Load precomputed data for the site (produced by `docs/data_prep.R`)
-library(feather)
+library(arrow)
 data_dir <- "data"
 function_word_pop_traj_data <- tryCatch(
   read_feather(file.path(data_dir, "function_word_pop_traj_data.feather")),
