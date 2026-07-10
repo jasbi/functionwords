@@ -9,7 +9,7 @@ library(purrr)
 library(yaml)
 
 source("styling.R")
-source("data.R") # Data loads directly from processed_data/word_model_db.RDS via docs/data.R.
+source("data.R") # Data loads from processed_data/word_model_db.RDS.
 source("literature.R")
 source("layout_and_plots.R")
 

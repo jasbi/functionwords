@@ -1,36 +1,157 @@
-# Literature references for the dashboard (edit this file, then reload the app).
-#
-# Each entry needs:
-#   apa: full reference string in APA 7 format (author, year, title, source, etc.)
-#   focus_function_words: list of function words this reference applies to
-#
-# Optional:
-#   notes: short annotation shown below the citation
+# Literature references for the dashboard
+# focus_function_words: function words covered by this reference
+# notes: optional annotation shown below the citation
+
+# NOTE: Please add relevant literature, references, and descriptions if available! 
+
+# Negation
 
 - apa: "Bloom, L. (1970). Language development: Form and function in emerging grammars. MIT Press."
   focus_function_words: ["no", "not", "n't"]
-  notes: "Add note here!
+  notes: #"Add brief description here!"
 
 - apa: "Pea, R. D. (1982). Origins of verbal logic: Spontaneous denials by two- and three-year-olds. Journal of Child Language, 9(3), 597–626. https://doi.org/10.1017/S0305000900004931"
   focus_function_words: ["no", "not", "n't"]
-  notes: ""
+  notes: # "Add brief description here!"
 
-- apa: "Choi, S. (1988). The semantic development of negation: a cross-linguistic longitudinal study. Journal of Child Language, 15(3), 517–531. doi:10.1017/S030500090001254X Déprez, V., & Pierce, A. (1993). Negation and functional projections in early grammar. Linguistic Inquiry, 24(1), 25–67. https://www.jstor.org/stable/4178792"
+- apa: "Choi, S. (1988). The semantic development of negation: a cross-linguistic longitudinal study. Journal of Child Language, 15(3), 517–531. doi:10.1017/S030500090001254X"
   focus_function_words: ["no", "not", "n't"]
-  notes: ""
+  notes: # "Add brief description here!"
+
+# Tense and Aspect
+
+# Coordination and Subordination
+
+# Quantifiers
 
 - apa: "Noveck, I. A. (2001). When children are more logical than adults: Experimental investigations of scalar implicature. Cognition, 78(2), 165–188. https://doi.org/10.1016/S0010-0277(00)00114-1"
   focus_function_words: ["some", "any", "few"]
-  notes: ""
+  notes: # "Add brief description here!"
 
 - apa: "Bale, A. C., Brooks, N., & Barner, D. (2010, August). Quantity implicature and access to scalar alternatives in language acquisition. In Semantics and Linguistic Theory (pp. 525-543)."
   focus_function_words: ["some", "any", "few"]
-  notes: ""
+  notes: # "Add brief description here!"
 
 - apa: "Musolino, J., & Lidz, J. (2006). Why children aren't universally successful with quantification. Linguistics, 44(4)."
   focus_function_words: ["some", "any", "few"]
-  notes: ""
+  notes: # "Add brief description here!"
 
 - apa: "Eiteljoerge, S. F., Pouscoulous, N., & Lieven, E. V. (2018). Some pieces are missing: implicature production in children. Frontiers in Psychology, 9, 1928."
   focus_function_words: ["some", "any", "few"]
-  notes: ""
+  notes: # "Add brief description here!"
+
+# Indefinite and Negative Pronouns
+
+# Cardinal Numbers
+
+# Ordinal Numbers
+
+# Modal Verbs and Epistemic Expressions
+
+- apa: "Kuczaj, S. A., & Maratsos, M. P. (1975). WHAT CHILDREN CAN SAY BEFORE THEY WILL. Merrill-Palmer Quarterly of Behavior and Development, 21(2), 89–111. http://www.jstor.org/stable/23083972"
+  focus_function_words: ["can", "could", "need", "may", "might", "should", "ought", "must", "maybe", "perhaps", "shall", "will", "would", "won't"]
+  notes: # "Add brief description here!"
+
+- apa: "Shepherd, S. (1982). From deontic to epistemic: an analysis of modals in the history of English, creoles, and language acquisition. In A. Ahlqvist (Ed.), Papers from the Fifth International Conference on Historical Linguistics, Galway, April 6–10 1981 (pp. 316-323). John Benjamins Publishing Company. https://doi.org/10.1075/cilt.21.36she"
+  focus_function_words: ["can", "could", "need", "may", "might", "should", "ought", "must", "maybe", "perhaps", "shall", "will", "would", "won't"]
+  notes: # "Add brief description here!"
+
+- apa: "Papafragou, A. (1998). Inference and word meaning: The case of modal auxiliaries. Lingua, 105(1–2), 1–47. https://doi.org/10.1016/S0024-3841(97)00029-6"
+  focus_function_words: ["can", "could", "need", "may", "might", "should", "ought", "must", "maybe", "perhaps", "shall", "will", "would", "won't"]
+  notes: # "Add brief description here!"
+
+# Copula and Auxiliaries
+
+# Articles
+
+- apa: "de Villiers, J. G., & de Villiers, P. A. (1973). A cross-sectional study of the acquisition of grammatical morphemes in child speech. Journal of Psycholinguistic Research, 2(3), 267–278."
+  focus_function_words: ["the", "a", "an"]
+  notes: # "Add brief description here!"
+
+# Demonstratives
+
+# Frequency Adverbs and Temporal Expressions
+
+# WH-words
+
+- apa: "Ervin-Tripp, S. (1970). Discourse agreement: How children answer questions. In J. R. Hayes (Ed.), Cognition and the development of language (pp. 79–107). Wiley."
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Cairns, H. S., & Hsu, J. R. (1978). Who, why, when, and how: A developmental study. Journal of Child Language, 5(3), 477–485. https://doi.org/10.1017/S0305000900002105 "
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Tyack, D., & Ingram, D. (1977). Children's production and comprehension of questions. Journal of Child Language, 4(2), 211–224. https://doi.org/10.1017/S0305000900001616  "
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Bloom, L., Merkin, S., & Wootten, J. (1982). Wh-questions: Linguistic factors that contribute to the sequence of acquisition. Child Development, 53(4), 1084–1092. https://doi.org/10.2307/1129150"
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Rowland, C. F., Pine, J. M., Lieven, E. V. M., & Theakston, A. L. (2003). Determinants of acquisition order in wh-questions: Re-evaluating the role of caregiver speech. Journal of Child Language, 30(3), 609–635. https://doi.org/10.1017/S0305000903005695"
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Stromswold, K. (1995). The acquisition of subject and object Wh-questions. Language Acquisition, 4(1–2), 5–48. https://doi.org/10.1080/10489223.1995.9671658"
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Thornton, Rosalind Jean, 'Adventures in long-distance moving: The acquisition of complex Wh-questions' (1990). Doctoral Dissertations. AAI9109855. https://digitalcommons.lib.uconn.edu/dissertations/AAI9109855"
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Yang, J., Lawrence, J. F., & Grøver, V. (2024). What else will I do when I start school? Preschoolers' wh-questions in dinnertime conversations and their language development. Language and Education, 44(3). https://doi.org/10.1177/01427237241242177"
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+- apa: "Yang, J., Lawrence, J. F., & Grøver, V. (2024). What else will I do when I start school? Preschoolers' wh-questions in dinnertime conversations and their language development. Language and Education, 44(3). https://doi.org/10.1177/01427237241242177"
+  focus_function_words: ["who", "what", "where", "when", "why", "how", "whose", "whom"]
+  notes: # "Add brief description here!"
+
+# Prepositions and Spatial Terms
+
+# Personal Pronouns
+
+# Possessive Pronouns
+
+# Reflexive Pronouns
+
+# Scalar and Focus Particles
+
+# Disjunction and Polarity
+
+- apa: "Paris, S. G. (1973). Comprehension of language connectives and propositional logical relationships. Journal of Experimental Child Psychology, 16(2), 278–291. https://doi.org/10.1016/0022-0965(73)90139-X"
+  focus_function_words: ["or", "nor", "either", "neither", "whether", "any", "ever", "yet"]
+  notes: # "Add brief description here!"
+
+- apa: "Braine, Martin D. S. & Barbara Rumain (1981), Development of comprehension of “or”: Evidence for a sequence of competencies. Journal of Experimental Child Psychology 31(1):46-70."
+  focus_function_words: ["or", "nor", "either", "neither", "whether", "any", "ever", "yet"]
+  notes: # "Add brief description here!"
+
+- apa: "Jasbi, Masoud (2018), Learning Disjunction. Unpublished Ph.D. thesis. Dept. of Linguistics. Stanford University. Stanford, CA."
+  focus_function_words: ["or", "nor", "either", "neither", "whether", "any", "ever", "yet"]
+  notes: # "Add brief description here!"
+
+- apa: "Chierchia, G., Crain, S., Guasti, M. T., Gualmini, A., & Meroni, L. (2001). The acquisition of disjunction: Evidence for a grammatical view of scalar implicatures. In A. H.-J. Do, L. Dominguez, & A. Johansen (Eds.), BUCLD 25 Proceedings (pp. 157–168). Cascadilla."
+  focus_function_words: ["or", "nor", "either", "neither", "whether", "any", "ever", "yet"]
+  notes: # "Add brief description here!"
+
+- apa: "Gualmini, A., Crain, S., Meroni, L., Chierchia, G., & Guasti, M. T. (2001, October). At the semantics/pragmatics interface in child language. In Semantics and Linguistic Theory (pp. 231-247)."
+  focus_function_words: ["or", "nor", "either", "neither", "whether", "any", "ever", "yet"]
+  notes: # "Add brief description here!"
+
+- apa: "Singh, R., Wexler, K., Astle-Rahim, A., Kamawar, D., & Fox, D. (2016). Children interpret disjunction as conjunction: Consequences for theories of implicature and child development. Natural Language Semantics, 24(4), 305–352. https://doi.org/10.1007/s11050-016-9126-3"
+  focus_function_words: ["or", "nor", "either", "neither", "whether", "any", "ever", "yet"]
+  notes: # "Add brief description here!"
+
+# Pronouns with Quantificational Antecedents
+
+# Polarity Word
+
+# Indefinite / Negative Polarity Items and Hedges
+
+# Comparative/Equative
+
+# Prepositions of Time and Other Function Words

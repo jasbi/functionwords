@@ -83,7 +83,7 @@ plot_cumulative_ppt <- function(plotdat, show_points = TRUE) {
     plot_theme_common()
 }
 
-plot_growth_curve <- function(w) {
+plot_growth_curve <- function(w, show_onset_line = TRUE) {
   obs <- word_growth_obs_by_word[[w]]
   fit <- word_growth_fit_by_word[[w]]
   if (is.null(obs) && is.null(fit)) {
@@ -105,6 +105,36 @@ plot_growth_curve <- function(w) {
         aes(x = age, y = fitted_ppt, color = "Fitted Values"),
         linewidth = 1.6
       )
+  }
+  onset_row <- word_growth_aop %>% filter(.data$word == w)
+  if (nrow(onset_row) > 0 && is.finite(onset_row$aop_estimate[1]) && isTRUE(show_onset_line)) {
+    est <- onset_row$aop_estimate[1]
+    ci_low <- onset_row$aop_q2_5[1]
+    ci_high <- onset_row$aop_q97_5[1]
+    # computes finite y-limits from observed/fitted data so the CI rectangle appears in ggplotly
+    y_vals <- c()
+    if (!is.null(obs) && nrow(obs) > 0) y_vals <- c(y_vals, obs$cumulative_ppt)
+    if (!is.null(fit) && nrow(fit) > 0) y_vals <- c(y_vals, fit$fitted_ppt)
+    if (length(y_vals) > 0 && any(is.finite(y_vals))) {
+      y_min <- min(y_vals, na.rm = TRUE)
+      y_max <- max(y_vals, na.rm = TRUE)
+      rng <- y_max - y_min
+      pad <- ifelse(rng == 0, 1, rng * 0.05)
+      ymin <- y_min - pad
+      ymax <- y_max + pad
+      if (is.finite(ci_low) && is.finite(ci_high)) {
+        rect_df <- data.frame(xmin = ci_low, xmax = ci_high, ymin = ymin, ymax = ymax)
+        p <- p +
+          geom_rect(data = rect_df, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+                    inherit.aes = FALSE, fill = "red", alpha = 0.15, colour = NA)
+      }
+      p <- p +
+        geom_vline(xintercept = est, color = "red", linetype = "dotted", linewidth = 0.8)
+    } else {
+      # fallback: draw only the vertical line
+      p <- p +
+        geom_vline(xintercept = est, color = "red", linetype = "dotted", linewidth = 0.8)
+    }
   }
   p +
     scale_color_manual(
@@ -423,7 +453,7 @@ ui <- fluidPage(
       div(
         class = "function-word-search",
         tags$p(
-          "Search for a function word (N=131) down below to view its growth curve, individual child trajectories plots, and relevant literature.",
+          "Search for a function word (N=131) down below to view its growth curve, individual child trajectory plots, and relevant literature.",
           style = "margin-bottom: 8px; font-size: 15px; color: #002855;"
         ),
         selectizeInput(
@@ -444,7 +474,7 @@ ui <- fluidPage(
         tags$ul(
           class = "section-outline-list",
           tags$li(tags$a(href = "#section-growth", "Growth Curves")),
-          tags$li(tags$a(href = "#section-trajectories", "Individual Child Trajectories")),
+          tags$li(tags$a(href = "#section-trajectories", "Child Trajectory Plots")),
           tags$li(tags$a(href = "#section-literature", "Relevant Literature"))
         )
       )
@@ -459,8 +489,15 @@ ui <- fluidPage(
         tags$div(
           class = "plot-toolbar",
           div(
+            class = "plot-controls",
+            checkboxInput("show_onset_line", "Show onset age estimate and CI", value = TRUE)
+          )
+        ),
+        tags$div(
+          class = "plot-toolbar",
+          div(
             class = "plot-download",
-            downloadButton("download_growth", "Download growth curve plot", class = "btn-primary")
+            downloadButton("download_growth", "Download plot", class = "btn-primary")
           )
         ),
         uiOutput("growthCurveEstimates")
@@ -468,7 +505,7 @@ ui <- fluidPage(
 
       tags$div(
         class = "section-block",
-        tags$h3(id = "section-trajectories", class = "section-heading", "Individual Child Trajectories"),
+        tags$h3(id = "section-trajectories", class = "section-heading", "Child Trajectory Plots"),
         div(
           class = "trajectory-controls well",
           selectInput(
@@ -509,6 +546,7 @@ ui <- fluidPage(
           )
         ),
         plotlyOutput("cumulativePptPlot", height = "460px"),
+
         tags$div(
           class = "plot-toolbar",
           div(
@@ -516,16 +554,17 @@ ui <- fluidPage(
             checkboxInput("show_points_trajectory", "Show data points", value = TRUE)
           )
         ),
+
         tags$div(
           class = "plot-toolbar",
           div(
             class = "plot-download",
-            downloadButton("download_trajectory", "Download individual child trajectory plot", class = "btn-primary")
+            downloadButton("download_trajectory", "Download plot", class = "btn-primary")
           )
         ),
         tags$p(
           class = "growth-estimate",
-          "Important Note: Sparse production data can be observed in some function words (especially in early development), which poses challenges in producing trajectories for a large number of children."
+          "Important note: Sparse production data can be observed in some function words (especially in early development), which poses challenges in producing trajectories for a large number of children."
         )
       ),
 
@@ -589,10 +628,9 @@ server <- function(input, output, session) {
 
   output$functionWordGrowthCurvePlot <- renderPlotly({
     req(input$selected_function_word)
-    key <- growth_plotly_key(input$selected_function_word)
-    widget <- growth_plotly_cache[[key]]
-    validate(need(!is.null(widget), "No growth curve data for this function word."))
-    widget
+    p <- plot_growth_curve(input$selected_function_word, show_onset_line = isTRUE(input$show_onset_line))
+    validate(need(!is.null(p), "No growth curve data for this function word."))
+    to_plotly(p, show_legend = TRUE)
   })
 
   output$growthCurveEstimates <- renderUI({
@@ -613,7 +651,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       req(input$selected_function_word)
-      plot_obj <- growth_plot_cache[[growth_plotly_key(input$selected_function_word)]]
+      plot_obj <- plot_growth_curve(input$selected_function_word, show_onset_line = isTRUE(input$show_onset_line))
       if (is.null(plot_obj)) {
         stop("No growth curve data available for this function word.")
       }
