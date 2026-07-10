@@ -8,11 +8,9 @@ library(RColorBrewer)
 library(purrr)
 library(yaml)
 
-#source("data_prep.R") # Only rerun if modified this file!
-
 source("styling.R")
-source("data.R")
+source("data.R") # Data loads directly from processed_data/word_model_db.RDS via docs/data.R.
 source("literature.R")
-source("plots.R")
+source("layout_and_plots.R")
 
 shinyApp(ui = ui, server = server)

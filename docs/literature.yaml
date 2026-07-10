@@ -7,18 +7,30 @@
 # Optional:
 #   notes: short annotation shown below the citation
 
-- apa: "Smith, J., & Lee, C. (2019). Quantifiers in early child speech acquisition research. Journal of Child Language, 46(2), 123–145."
-  focus_function_words: ["and"]
-  notes: "Explores how children learn to use quantifiers in spontaneous conversations."
+- apa: "Bloom, L. (1970). Language development: Form and function in emerging grammars. MIT Press."
+  focus_function_words: ["no", "not", "n't"]
+  notes: "Add note here!
 
-- apa: "Ramírez, M., & Kovács, B. (2022). The role of determiners in bilingual language development. Applied Linguistics, 43(1), 45–67."
-  focus_function_words: ["no"]
-  notes: "Comparative study of determiner use in English–Spanish bilingual children."
+- apa: "Pea, R. D. (1982). Origins of verbal logic: Spontaneous denials by two- and three-year-olds. Journal of Child Language, 9(3), 597–626. https://doi.org/10.1017/S0305000900004931"
+  focus_function_words: ["no", "not", "n't"]
+  notes: ""
 
-- apa: "Chen, F. (2017). Function words as predictors of syntactic complexity. Cognitive Development, 42, 88–102."
-  focus_function_words: ["not"]
-  notes: "Analyzes how children's use of function words correlates with syntactic development."
+- apa: "Choi, S. (1988). The semantic development of negation: a cross-linguistic longitudinal study. Journal of Child Language, 15(3), 517–531. doi:10.1017/S030500090001254X Déprez, V., & Pierce, A. (1993). Negation and functional projections in early grammar. Linguistic Inquiry, 24(1), 25–67. https://www.jstor.org/stable/4178792"
+  focus_function_words: ["no", "not", "n't"]
+  notes: ""
 
-- apa: "O'Malley, S., & Patel, R. (2015). Longitudinal analysis of pronoun acquisition. First Language, 35(4), 312–330."
-  focus_function_words: ["i"]
-  notes: "Tracks pronoun emergence and errors over two years."
+- apa: "Noveck, I. A. (2001). When children are more logical than adults: Experimental investigations of scalar implicature. Cognition, 78(2), 165–188. https://doi.org/10.1016/S0010-0277(00)00114-1"
+  focus_function_words: ["some", "any", "few"]
+  notes: ""
+
+- apa: "Bale, A. C., Brooks, N., & Barner, D. (2010, August). Quantity implicature and access to scalar alternatives in language acquisition. In Semantics and Linguistic Theory (pp. 525-543)."
+  focus_function_words: ["some", "any", "few"]
+  notes: ""
+
+- apa: "Musolino, J., & Lidz, J. (2006). Why children aren't universally successful with quantification. Linguistics, 44(4)."
+  focus_function_words: ["some", "any", "few"]
+  notes: ""
+
+- apa: "Eiteljoerge, S. F., Pouscoulous, N., & Lieven, E. V. (2018). Some pieces are missing: implicature production in children. Frontiers in Psychology, 9, 1928."
+  focus_function_words: ["some", "any", "few"]
+  notes: ""

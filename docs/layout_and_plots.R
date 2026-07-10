@@ -1,31 +1,15 @@
+site_title <- "The Function Word Dashboard 🐮"
+site_lab_name <- "L3 Lab"
+site_lab_url <- "https://l3lab.ucdavis.edu/"
+site_creator_name <- "Debbie Odufuwa"
+site_creator_github <- "https://github.com/dodufuwa"
+site_year <- format(Sys.Date(), "%Y")
+
 plot_axis_x <- "Age (Months)"
 plot_axis_title_size <- 16
 plot_axis_text_size <- 14
 plot_legend_size <- 14
 plot_point_size <- 1.6
-
-site_creator_name <- "Debbie Odufuwa"
-site_creator_github <- "https://github.com/dodufuwa"
-site_lab_name <- "L3 Lab"
-site_lab_url <- "https://l3lab.ucdavis.edu/"
-site_year <- format(Sys.Date(), "%Y")
-site_title <- "Function Word Acquisition in CHILDES 🐮"
-
-# Load precomputed data for the site (produced by `docs/data_prep.R`)
-library(arrow)
-data_dir <- "data"
-function_word_pop_traj_data <- tryCatch(
-  read_feather(file.path(data_dir, "function_word_pop_traj_data.feather")),
-  error = function(e) tibble::tibble(word = character(), target_child_age = numeric(), cumulative_relfreq = numeric(), cumulative_ppt = numeric())
-)
-gompertz_fitted_relfreq <- tryCatch(
-  read_feather(file.path(data_dir, "gompertz_fitted_relfreq.feather")),
-  error = function(e) tibble::tibble(word = character(), target_child_age = numeric(), fitted = numeric())
-)
-gompertz_onset_estimates <- tryCatch(
-  read_feather(file.path(data_dir, "gompertz_onset_estimates.feather")),
-  error = function(e) tibble::tibble(word = character(), estimate = numeric(), q2_5 = numeric(), q97_5 = numeric(), model = character())
-)
 
 plot_theme_common <- function() {
   theme_bw(base_family = "Lato") +
@@ -36,14 +20,6 @@ plot_theme_common <- function() {
       legend.title = element_text(size = plot_legend_size, color = "black"),
       legend.text = element_text(size = plot_legend_size, color = aggie_blue),
       legend.position = "right"
-    )
-}
-
-filter_by_age <- function(dat, age_min, age_max) {
-  dat %>%
-    dplyr::filter(
-      .data$target_child_age >= age_min,
-      .data$target_child_age <= age_max
     )
 }
 
@@ -82,52 +58,7 @@ to_plotly <- function(p, show_legend = TRUE) {
   gp
 }
 
-format_growth_estimate_text <- function(word, onset_tbl) {
-  row <- onset_tbl %>% dplyr::filter(.data$word == !!word)
-  if (nrow(row) == 0 || !is.finite(row$estimate[1])) {
-    return(NULL)
-  }
-  # Standardized note: always start with the same phrase and report exact age in months
-  estimate <- row$estimate[1]
-  q2.5 <- row$q2_5[1]
-  q97.5 <- row$q97_5[1]
-  ci_text <- if (is.finite(q2.5) && is.finite(q97.5)) {
-    sprintf("CI = [%.2f, %.2f]", q2.5, q97.5)
-  } else {
-    "CI unavailable"
-  }
-  sprintf(
-    "A bayesian growth curve model estimated the onset age of production for \"%s\" as %.1f months (%s).",
-    word,
-    estimate,
-    ci_text
-  )
-}
-
-plot_population_trajectory <- function(w, show_points = TRUE, age_min, age_max) {
-  # Use full data (no age-based filtering) but limit display with coord_cartesian
-  dat <- function_word_pop_traj_data %>%
-    dplyr::filter(word == w) %>%
-    dplyr::arrange(target_child_age)
-  if (nrow(dat) == 0) {
-    return(NULL)
-  }
-  p <- ggplot(dat, aes(x = target_child_age, y = cumulative_ppt)) +
-    geom_line(color = aggie_blue, linewidth = 1.2)
-  if (show_points) {
-    p <- p + geom_point(color = aggie_gold, size = plot_point_size)
-  }
-  p +
-    labs(
-      x = plot_axis_x,
-      y = "Cumulative PPT"
-    ) +
-    plot_theme_common() +
-    coord_cartesian(xlim = c(age_min, age_max))
-}
-
-plot_cumulative_ppt <- function(plotdat, show_points = TRUE, age_min, age_max) {
-  plotdat <- filter_by_age(plotdat, age_min, age_max)
+plot_cumulative_ppt <- function(plotdat, show_points = TRUE) {
   if (nrow(plotdat) == 0) {
     return(NULL)
   }
@@ -149,41 +80,31 @@ plot_cumulative_ppt <- function(plotdat, show_points = TRUE, age_min, age_max) {
       title = "Child (Collection | Corpus)",
       title.theme = element_text(color = "black", size = plot_legend_size)
     )) +
-    plot_theme_common() +
-    coord_cartesian(xlim = c(age_min, age_max))
+    plot_theme_common()
 }
 
-plot_growth_curve <- function(w, show_points = TRUE, age_min, age_max) {
-  # Use full pooled data for fitting/points but respect viewer x-limits
-  dat <- function_word_pop_traj_data %>%
-    dplyr::filter(word == w) %>%
-    dplyr::arrange(target_child_age)
-  # convert stored fitted relative-frequency (proportion) back to parts-per-thousand
-  curve <- gompertz_fitted_relfreq %>%
-    dplyr::filter(word == w, is.finite(fitted)) %>%
-    dplyr::mutate(fitted = .data$fitted * 1000) %>%
-    dplyr::arrange(target_child_age)
-  if (nrow(dat) == 0 && nrow(curve) == 0) {
+plot_growth_curve <- function(w) {
+  obs <- word_growth_obs_by_word[[w]]
+  fit <- word_growth_fit_by_word[[w]]
+  if (is.null(obs) && is.null(fit)) {
     return(NULL)
   }
   p <- ggplot()
-  if (show_points && nrow(dat) > 0) {
+  if (!is.null(obs) && nrow(obs) > 0) {
     p <- p +
       geom_point(
-        data = dat,
-        aes(x = target_child_age, y = cumulative_ppt, color = "Actual Data"),
+        data = obs,
+        aes(x = age, y = cumulative_ppt, color = "Actual Data"),
         size = plot_point_size
       )
   }
-  if (nrow(curve) > 0) {
-    p <- p + geom_line(
-      data = curve,
-      aes(x = target_child_age, y = fitted, color = "Fitted Values"),
-      linewidth = 1.6
-    )
-  }
-  if (!show_points && nrow(curve) == 0) {
-    return(NULL)
+  if (!is.null(fit) && nrow(fit) > 0) {
+    p <- p +
+      geom_line(
+        data = fit,
+        aes(x = age, y = fitted_ppt, color = "Fitted Values"),
+        linewidth = 1.6
+      )
   }
   p +
     scale_color_manual(
@@ -194,9 +115,29 @@ plot_growth_curve <- function(w, show_points = TRUE, age_min, age_max) {
       x = plot_axis_x,
       y = "Cumulative Parts Per Thousand"
     ) +
-    plot_theme_common() +
-    coord_cartesian(xlim = c(age_min, age_max))
+    plot_theme_common()
 }
+
+growth_plotly_key <- function(word) {
+  as.character(word)
+}
+
+growth_plot_cache <- local({
+  cache <- list()
+  for (w in function_words) {
+    cache[[growth_plotly_key(w)]] <- plot_growth_curve(w)
+  }
+  cache
+})
+
+growth_plotly_cache <- local({
+  cache <- list()
+  for (w in function_words) {
+    p <- growth_plot_cache[[growth_plotly_key(w)]]
+    cache[[growth_plotly_key(w)]] <- if (is.null(p)) NULL else to_plotly(p, show_legend = TRUE)
+  }
+  cache
+})
 
 safe_plot_filename <- function(prefix, word, ext = "png") {
   slug <- gsub("[^a-zA-Z0-9]+", "_", tolower(word))
@@ -218,7 +159,7 @@ save_plot_download <- function(file, plot_obj, width = 10, height = 6) {
 }
 
 ui <- fluidPage(
-  title = "Function Word Acquisition in CHILDES",
+  title = "The Function Word Dashboard 🐮",
   theme = aggie_theme,
   tags$head(
     tags$style(HTML(sprintf(
@@ -433,6 +374,23 @@ ui <- fluidPage(
         color: #002855 !important;
         text-align: center;
       }
+      .plot-download {
+        margin: 8px 0 24px 0;
+      }
+      .section-note {
+        font-size: 15px;
+        color: %s !important;
+        margin: 0 0 14px 0;
+        font-style: italic;
+      }
+      .site-attribution {
+        margin-top: 40px;
+        padding: 16px 0 24px 0;
+        border-top: 1px solid %s;
+        font-size: 14px;
+        color: #002855 !important;
+        text-align: center;
+      }
       ",
       aggie_blue,
       aggie_gold, aggie_blue,
@@ -464,11 +422,15 @@ ui <- fluidPage(
       ),
       div(
         class = "function-word-search",
+        tags$p(
+          "Search for a function word (N=131) down below to view its growth curve, individual child trajectories plots, and relevant literature.",
+          style = "margin-bottom: 8px; font-size: 15px; color: #002855;"
+        ),
         selectizeInput(
           "selected_function_word",
           label = NULL,
           choices = function_words,
-          selected = function_words[[1]],
+          selected = if ("no" %in% function_words) "no" else function_words[[1]],
           options = list(
             placeholder = "Search for a function word...",
             onInitialize = I("function() { this.setValue(this.getValue()); }")
@@ -478,12 +440,11 @@ ui <- fluidPage(
       tags$nav(
         class = "section-outline",
         `aria-label` = "Page sections",
-        tags$p(class = "section-outline-title", "On this page"),
+        tags$p(class = "section-outline-title", "Table of Contents"),
         tags$ul(
           class = "section-outline-list",
-          tags$li(tags$a(href = "#section-population", "Population Trajectories")),
-          tags$li(tags$a(href = "#section-trajectories", "Individual Child Trajectories")),
           tags$li(tags$a(href = "#section-growth", "Growth Curves")),
+          tags$li(tags$a(href = "#section-trajectories", "Individual Child Trajectories")),
           tags$li(tags$a(href = "#section-literature", "Relevant Literature"))
         )
       )
@@ -493,28 +454,16 @@ ui <- fluidPage(
       class = "app-main",
       tags$div(
         class = "section-block",
-        tags$h3(id = "section-population", class = "section-heading", "Population Trajectories"),
-        plotlyOutput("populationTrajPlot", height = "420px"),
+        tags$h3(id = "section-growth", class = "section-heading", "Growth Curves"),
+        plotlyOutput("functionWordGrowthCurvePlot", height = "420px"),
         tags$div(
           class = "plot-toolbar",
           div(
-            class = "plot-controls",
-            sliderInput(
-              "age_range_population",
-              "Age range (months)",
-              min = age_months_min,
-              max = age_months_max,
-              value = c(age_months_min, age_months_max),
-              step = 1,
-              sep = ""
-            ),
-            checkboxInput("show_points_population", "Show data points", value = TRUE)
+            class = "plot-download",
+            downloadButton("download_growth", "Download growth curve plot", class = "btn-primary")
           )
         ),
-        div(
-          class = "plot-download",
-          downloadButton("download_population", "Download population trajectory plot", class = "btn-primary")
-        )
+        uiOutput("growthCurveEstimates")
       ),
 
       tags$div(
@@ -564,53 +513,20 @@ ui <- fluidPage(
           class = "plot-toolbar",
           div(
             class = "plot-controls",
-            sliderInput(
-              "age_range_trajectory",
-              "Age range (months)",
-              min = age_months_min,
-              max = age_months_max,
-              value = c(age_months_min, age_months_max),
-              step = 1,
-              sep = ""
-            ),
             checkboxInput("show_points_trajectory", "Show data points", value = TRUE)
           )
         ),
-        div(
-          class = "plot-download",
-          downloadButton("download_trajectory", "Download individual child trajectory plot", class = "btn-primary")
-        ),
-        tags$p(
-          class = "growth-estimate",
-          "Trajectories can be sparse for some children, especially for less frequent function words or smaller corpora."
-        )
-      ),
-
-      tags$div(
-        class = "section-block",
-        tags$h3(id = "section-growth", class = "section-heading", "Growth Curves"),
-        plotlyOutput("functionWordGrowthCurvePlot", height = "420px"),
         tags$div(
           class = "plot-toolbar",
           div(
-            class = "plot-controls",
-            sliderInput(
-              "age_range_growth",
-              "Age range (months)",
-              min = age_months_min,
-              max = age_months_max,
-              value = c(age_months_min, age_months_max),
-              step = 1,
-              sep = ""
-            ),
-            checkboxInput("show_points_growth", "Show data points", value = TRUE)
+            class = "plot-download",
+            downloadButton("download_trajectory", "Download individual child trajectory plot", class = "btn-primary")
           )
         ),
-        div(
-          class = "plot-download",
-          downloadButton("download_growth", "Download growth curve plot", class = "btn-primary")
-        ),
-        uiOutput("growthCurveEstimates")
+        tags$p(
+          class = "growth-estimate",
+          "Important Note: Sparse production data can be observed in some function words (especially in early development), which poses challenges in producing trajectories for a large number of children."
+        )
       ),
 
       tags$h3(id = "section-literature", class = "section-heading", "Relevant Literature"),
@@ -639,38 +555,6 @@ ui <- fluidPage(
 )
 
 server <- function(input, output, session) {
-  output$populationTrajPlot <- renderPlotly({
-    req(input$selected_function_word, input$age_range_population)
-    ages <- list(min = input$age_range_population[1], max = input$age_range_population[2])
-    p <- plot_population_trajectory(
-      input$selected_function_word,
-      show_points = isTRUE(input$show_points_population),
-      age_min = ages$min,
-      age_max = ages$max
-    )
-    validate(need(!is.null(p), "No data for selected function word and age range."))
-    to_plotly(p, show_legend = FALSE)
-  })
-
-  output$download_population <- downloadHandler(
-    filename = function() {
-      safe_plot_filename("population_trajectory", input$selected_function_word)
-    },
-    content = function(file) {
-      req(input$selected_function_word, input$age_range_population)
-      ages <- list(min = input$age_range_population[1], max = input$age_range_population[2])
-      save_plot_download(
-        file,
-        plot_population_trajectory(
-          input$selected_function_word,
-          show_points = isTRUE(input$show_points_population),
-          age_min = ages$min,
-          age_max = ages$max
-        )
-      )
-    }
-  )
-
   filteredData <- reactive({
     req(input$selected_function_word, input$plot_mode)
     dat <- child_relfreq %>%
@@ -703,59 +587,21 @@ server <- function(input, output, session) {
     dat
   })
 
-  output$cumulativePptPlot <- renderPlotly({
-    req(input$selected_function_word, input$age_range_trajectory)
-    ages <- list(min = input$age_range_trajectory[1], max = input$age_range_trajectory[2])
-    plotdat <- filteredData()
-    p <- plot_cumulative_ppt(
-      plotdat,
-      show_points = isTRUE(input$show_points_trajectory),
-      age_min = ages$min,
-      age_max = ages$max
-    )
-    validate(need(!is.null(p), "No data for selection and age range."))
-    to_plotly(p, show_legend = TRUE)
-  })
-
-  output$download_trajectory <- downloadHandler(
-    filename = function() {
-      safe_plot_filename("individual_child_trajectory", input$selected_function_word)
-    },
-    content = function(file) {
-      req(input$selected_function_word, input$plot_mode, input$age_range_trajectory)
-      ages <- list(min = input$age_range_trajectory[1], max = input$age_range_trajectory[2])
-      plotdat <- filteredData()
-      p <- plot_cumulative_ppt(
-        plotdat,
-        show_points = isTRUE(input$show_points_trajectory),
-        age_min = ages$min,
-        age_max = ages$max
-      )
-      save_plot_download(file, p, width = 11, height = 7)
-    }
-  )
-
   output$functionWordGrowthCurvePlot <- renderPlotly({
-    req(input$selected_function_word, input$age_range_growth)
-    ages <- list(min = input$age_range_growth[1], max = input$age_range_growth[2])
-    p <- plot_growth_curve(
-      input$selected_function_word,
-      show_points = isTRUE(input$show_points_growth),
-      age_min = ages$min,
-      age_max = ages$max
-    )
-    validate(need(!is.null(p), "No data for selected function word and age range."))
-    to_plotly(p, show_legend = TRUE)
+    req(input$selected_function_word)
+    key <- growth_plotly_key(input$selected_function_word)
+    widget <- growth_plotly_cache[[key]]
+    validate(need(!is.null(widget), "No growth curve data for this function word."))
+    widget
   })
 
   output$growthCurveEstimates <- renderUI({
     req(input$selected_function_word)
-    word <- input$selected_function_word
-    text <- format_growth_estimate_text(word, gompertz_onset_estimates)
-    if (is.null(text)) {
+    text <- growth_estimate_text[[input$selected_function_word]]
+    if (is.null(text) || text == "") {
       return(tags$p(
         class = "growth-estimate",
-        "Growth curve onset estimates are not available for this function word."
+        paste0("Growth curve onset estimates are not available for \"", input$selected_function_word, "\".")
       ))
     }
     tags$p(class = "growth-estimate", text)
@@ -766,17 +612,38 @@ server <- function(input, output, session) {
       safe_plot_filename("growth_curve", input$selected_function_word)
     },
     content = function(file) {
-      req(input$selected_function_word, input$age_range_growth)
-      ages <- list(min = input$age_range_growth[1], max = input$age_range_growth[2])
-      save_plot_download(
-        file,
-        plot_growth_curve(
-          input$selected_function_word,
-          show_points = isTRUE(input$show_points_growth),
-          age_min = ages$min,
-          age_max = ages$max
-        )
-      )
+      req(input$selected_function_word)
+      plot_obj <- growth_plot_cache[[growth_plotly_key(input$selected_function_word)]]
+      if (is.null(plot_obj)) {
+        stop("No growth curve data available for this function word.")
+      }
+      save_plot_download(file, plot_obj)
+    }
+  )
+
+  output$cumulativePptPlot <- renderPlotly({
+    req(input$selected_function_word, input$plot_mode)
+    plotdat <- filteredData()
+    p <- plot_cumulative_ppt(plotdat, show_points = isTRUE(input$show_points_trajectory))
+    validate(need(!is.null(p), "No data for selection."))
+    to_plotly(p, show_legend = TRUE)
+  }) %>% bindCache(
+    input$selected_function_word,
+    input$plot_mode,
+    input$selected_child_display,
+    input$selected_children_multi,
+    input$show_points_trajectory
+  )
+
+  output$download_trajectory <- downloadHandler(
+    filename = function() {
+      safe_plot_filename("individual_child_trajectory", input$selected_function_word)
+    },
+    content = function(file) {
+      req(input$selected_function_word, input$plot_mode)
+      plotdat <- filteredData()
+      p <- plot_cumulative_ppt(plotdat, show_points = isTRUE(input$show_points_trajectory))
+      save_plot_download(file, p, width = 11, height = 7)
     }
   )
 

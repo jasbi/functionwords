@@ -13,4 +13,3 @@ aggie_theme <- bs_theme(
   "navbar-brand-color" = aggie_gold,
   "body-bg" = aggie_white
 )
-

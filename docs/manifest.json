@@ -4115,21 +4115,6 @@
     "data.R": {
       "checksum": "b1976e641ea6de9c7911c4b1f73a64ed"
     },
-    "data/child_relfreq.feather": {
-      "checksum": "a717bb51d5880b4508ac1f48a9a8fd40"
-    },
-    "data/function_word_pop_traj_data.feather": {
-      "checksum": "46e1765e303f381c9430261070f44c5f"
-    },
-    "data/gompertz_fitted_relfreq.feather": {
-      "checksum": "611e917f3e6855e11b93b01e730b614f"
-    },
-    "data/gompertz_onset_estimates.feather": {
-      "checksum": "4672521c430254b74d8ac294025e75c2"
-    },
-    "data/tokens_per_child.feather": {
-      "checksum": "c051415f6888a8230bb1528706c1cb1b"
-    },
     "literature.R": {
       "checksum": "735421b7c12ea286e632a4b1fc4197ba"
     },
