@@ -1,0 +1,192 @@
+CDI VALIDATION ANALYSIS - HOW IT WORKS
+========================================
+
+WHAT THIS ANALYSIS DOES
+------------------------
+This checks whether the project's CHILDES-corpus-derived "age of production"
+estimates for function words agree with an independent benchmark: the
+MacArthur-Bates CDI (Communicative Development Inventory), as hosted on
+Wordbank. Two completely different methods try to answer the same question
+("when do children start producing word X?") using different data and
+different statistics. This analysis puts them side by side.
+
+Files:
+  cdi_validation.Rmd              - the analysis script (knit this to rerun)
+  cdi_childes_comparison.csv      - output: joined table of both estimates
+  cdi_validation_plot.png         - output: scatter plot of the comparison
+  summary.txt                     - this file
+
+
+THE TWO DATA SOURCES
+---------------------
+
+1) CHILDES side: processed_data/age_of_production.RDS
+   - Built in processing/englishPlotsAndCurves_refactored.Rmd (and the older
+     processing/englishPlotsAndCurves.Rmd).
+   - For each word, all child-speech tokens from CHILDES transcripts are
+     counted per age (in months), turned into a CUMULATIVE relative
+     frequency curve (parts per thousand of all child words at that age
+     that are this word, accumulated over age).
+   - A Bayesian nonlinear growth curve (Gompertz function) is fit to that
+     cumulative curve per word using brms:
+         cumulative_ppt ~ upperAsymptote * exp(-exp(((growthRate*e)/upperAsymptote)*(lag-age)+1))
+   - The "lag" parameter of that curve is the estimated inflection point of
+     the S-shaped growth curve - this is what's stored as `Estimate` (with
+     `Est.Error`, `Q2.5`, `Q97.5` as its posterior SD and 95% credible
+     interval). Units: age in months.
+   - Interpretation: this is NOT "the age a word first appears in transcripts."
+     It's a smoothed estimate of where the word's USAGE RATE starts climbing
+     steeply, based on pooling all children's transcripts together.
+   - Note: there are two different age_of_production.RDS files in the repo
+     (processing/ and processed_data/) with non-overlapping word lists -
+     both are stale, hand-saved snapshots from different runs of an evolving
+     word list. This analysis uses processed_data/age_of_production.RDS
+     (60 words, chosen because it includes pronouns/auxiliaries like
+     I/you/he/am, which the CDI list also has - better overlap for
+     comparison). It had been deleted from the working tree and was
+     restored via `git checkout HEAD -- processed_data/age_of_production.RDS`
+     before running this analysis.
+
+2) CDI side: processed_data/cdi_functionwords.csv
+   - Downloaded from Wordbank (2025-01-25) via the wordbankr R package, for
+     English (American), the WS ("Words & Sentences") form, "produces"
+     measure, ages 16-30 months.
+   - For each word x age, `proportion` = the fraction of children in the
+     Wordbank norming sample whose PARENT reported (via checklist) that the
+     child produces that word.
+   - This analysis computes "CDI onset age" per word as the first age at
+     which that proportion crosses a threshold - done at three thresholds
+     (0.10, 0.15, 0.20) to give both a point estimate (0.15) and a rough
+     "confidence range" (0.10-0.20) for the plot. This mirrors the exact
+     method already used in processing/MBCDIfunctionWords.Rmd.
+   - Interpretation: this is the age at which a meaningful minority of
+     surveyed children are reported to say the word at all, per parent
+     checklist recall - a coarser, threshold-based, self-report measure.
+
+
+WHY THE TWO METHODS AREN'T DIRECTLY COMPARABLE (BY DESIGN)
+-------------------------------------------------------------
+- CHILDES `Estimate` = inflection point of a continuous usage-frequency
+  curve, fit from actual transcribed speech. Sensitive to even occasional
+  early uses of a word.
+- CDI `age_above_0.15` = age at which >=15% of parents check "yes, produces"
+  on a survey. Requires the word to be established enough that a substantial
+  fraction of *other* children are also saying it, and depends on parents
+  noticing/recalling/reporting production accurately.
+- Because of this, CHILDES estimates are expected to run systematically
+  EARLIER than CDI estimates, since natural speech can pick up sparse early
+  usage that hasn't yet become common enough for 15% of parents to report it.
+  This is exactly what we found (see RESULTS below).
+
+
+HOW THE ANALYSIS SCRIPT WORKS, STEP BY STEP
+---------------------------------------------
+1. Load both datasets (readRDS / read_csv).
+2. Recompute CDI_onset_age from the raw proportions (age_above_0.1/.15/.2
+   per word), same logic as the existing MBCDIfunctionWords.Rmd script.
+3. Normalize word spelling so the two datasets can be joined on a shared
+   `word` column. Only two unambiguous renames are applied:
+     "can (auxiliary)" -> "can"
+     "inside/in"        -> "in"
+   Contractions are deliberately NOT force-matched (see LIMITATIONS below).
+4. Inner join on `word`: only words present in BOTH datasets survive. This
+   produced 45 matched words out of 60 CHILDES words / 86 CDI words.
+   Unmatched words on each side are printed by the script for transparency
+   (e.g. CHILDES-only: n't, 'm, sometimes, need, except, very, just, here,
+   out, down, from, does, do, or - mostly words missing from the CDI list,
+   or contractions written differently in each source).
+5. Compute agreement statistics between CHILDES `Estimate` and each of the
+   three CDI thresholds: Pearson correlation, Spearman correlation (rank-
+   based, robust to nonlinearity), mean absolute difference, RMSE, and a
+   simple linear regression (Estimate ~ age_above_0.15) for R-squared/slope.
+6. Plot: x-axis = CDI age_above_0.15 (with horizontal whiskers spanning the
+   0.10-0.20 threshold range), y-axis = CHILDES Estimate (with vertical
+   whiskers = 95% credible interval), a dashed diagonal line marking
+   "perfect agreement" (y = x), and every point labeled with its word.
+7. Save the joined table and the plot to disk.
+
+
+RESULTS (as of this run)
+--------------------------
+- 45 words matched and compared.
+- Pearson r ~ 0.58-0.59, Spearman rho ~ 0.57-0.58 across all three CDI
+  thresholds, all p < 0.0001. Moderate, highly significant positive
+  correlation - the two methods broadly agree on which words come earlier
+  vs. later, but don't line up precisely word-for-word.
+- Linear regression of Estimate on age_above_0.15: R-squared ~ 0.34, slope
+  ~ 0.53 (i.e. CDI age only explains about a third of the variance in the
+  CHILDES estimate).
+- Systematic offset: CHILDES estimates run about 3.4-5.4 months EARLIER than
+  CDI on average (mean absolute difference), and the gap widens at higher
+  CDI thresholds - consistent with the expected direction of bias described
+  above.
+- Biggest individual disagreements (CHILDES much earlier than CDI):
+  about, those, all, could, our, another, who, they - each 7.5-13.5 months
+  earlier by the CHILDES estimate. These are candidates worth a closer
+  look (e.g. checking if a handful of early corpus tokens for these words
+  are driving an artificially early growth-curve fit).
+
+
+LIMITATIONS / CAVEATS
+-----------------------
+- Ground-truth file staleness: processed_data/age_of_production.RDS is a
+  saved snapshot from an earlier run of the pipeline, not necessarily
+  reflecting the current/complete word_params list in
+  englishPlotsAndCurves_refactored.Rmd. If that script is re-run and
+  re-saved, this comparison should be redone against the fresh output.
+- Word coverage is incomplete: 45 of 60 CHILDES words matched; several
+  high-frequency words (do, does, n't, 'm, or) were excluded rather than
+  fuzzy-matched, because their CDI counterparts are contractions or
+  differently-scoped words that would need a judgment call to equate
+  correctly (e.g. is CHILDES "n't" comparable to CDI "don't", which also
+  includes the "don't" verb+negation as a whole word, not just the
+  contracted negative morpheme?).
+- Small sample: correlation/regression stats are based on only 45 data
+  points, so treat R-squared/p-values as indicative, not definitive.
+- Different populations: CHILDES corpora and the Wordbank CDI norming
+  sample are not the same children, same time periods, or necessarily
+  matched on dialect/SES - some of the disagreement could reflect sample
+  differences rather than a flaw in either method.
+- CDI threshold choice affects results slightly: the three thresholds
+  (0.1/0.15/0.2) give similar but not identical correlation figures; 0.15
+  was used as the primary point estimate to match prior in-repo convention.
+
+
+ANTICIPATED QUESTIONS
+------------------------
+Q: Why not just use age of FIRST occurrence in CHILDES instead of a fitted
+   growth curve?
+A: First occurrence is very noisy (one transcription error or one child's
+   early attempt can make a word look acquired at age 12mo). The Gompertz
+   fit smooths over all children/ages to find where usage robustly
+   increases, which is why the project uses it - but it also means it's
+   not directly the same construct as "first time observed."
+
+Q: Why is CHILDES earlier than CDI instead of the same or later?
+A: See "WHY THE TWO METHODS AREN'T DIRECTLY COMPARABLE" above - CHILDES
+   can register a word from sparse early production, while CDI requires a
+   noticeable fraction of parents to report the word as an established part
+   of the child's vocabulary.
+
+Q: Is a Pearson r of ~0.58 "good"?
+A: For two independently-collected, methodologically different measures of
+   the same underlying construct (word acquisition timing), a moderate,
+   highly significant correlation is a reasonable validation result. It
+   shows real signal/agreement, not proof of interchangeability - it would
+   be surprising (and slightly suspicious) if r were much higher than this
+   given how differently the two are computed.
+
+Q: Can I rerun this with different words, thresholds, or a fresher
+   CHILDES dataset?
+A: Yes - edit cdi_validation.Rmd: change the threshold columns used in the
+   stats/plot chunks, add more normalization rules in the `recode()` call
+   to include more words, or point the readRDS() call at a freshly
+   regenerated age_of_production.RDS once the main pipeline is rerun.
+
+Q: Where do I look if I want to investigate the outlier words further?
+A: cdi_childes_comparison.csv has both estimates and their intervals per
+   word - filter/sort by the difference between Estimate and
+   age_above_0.15. For deeper investigation of a specific word's CHILDES
+   growth curve, look at the corresponding *_lagModel fit and per-word plot
+   in processing/englishPlotsAndCurves_refactored.Rmd or the modeling/
+   directory (cached brms model files).

@@ -1,0 +1,139 @@
+---
+title: "CDI Validation of CHILDES Age of Production Estimates"
+author: ""
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(ggrepel)
+library(broom)
+```
+
+# Load Data
+
+CHILDES-derived onset-of-production estimates (Gompertz growth-curve `lag`
+parameter, fit per word on cumulative child production frequency):
+
+```{r loadChildes}
+age_of_production <- readRDS("../processed_data/age_of_production.RDS")
+
+age_of_production <- age_of_production %>%
+  mutate(word = as.character(word))
+
+age_of_production
+```
+
+CDI (Wordbank) parent-report production data:
+
+```{r loadCDI}
+cdi_data <- read_csv("../processed_data/cdi_functionwords.csv", show_col_types = FALSE)
+
+cdi_data
+```
+
+# Compute CDI Onset Ages
+
+For each word, the earliest age (months) at which the proportion of children
+reported to produce it crosses 0.1 / 0.15 / 0.2.
+
+```{r cdiOnsetAge}
+CDI_onset_age <- cdi_data %>%
+  group_by(word) %>%
+  summarise(
+    age_above_0.1  = min(age[proportion >= 0.1],  na.rm = TRUE),
+    age_above_0.15 = min(age[proportion >= 0.15], na.rm = TRUE),
+    age_above_0.2  = min(age[proportion >= 0.2],  na.rm = TRUE)
+  )
+
+CDI_onset_age
+```
+
+# Normalize Word Tokens and Join
+
+CDI and CHILDES tokenize a few words differently. We apply only unambiguous
+one-to-one mappings; contractions (`'m`/`am`, `n't`/`don't`) are structurally
+different tokens on the CHILDES side and are left unmatched rather than
+force-mapped.
+
+```{r normalizeJoin}
+CDI_onset_age_norm <- CDI_onset_age %>%
+  mutate(word = recode(word,
+    "can (auxiliary)" = "can",
+    "inside/in"        = "in"
+  ))
+
+comparison <- inner_join(age_of_production, CDI_onset_age_norm, by = "word")
+
+childes_unmatched <- setdiff(age_of_production$word, CDI_onset_age_norm$word)
+cdi_unmatched     <- setdiff(CDI_onset_age_norm$word, age_of_production$word)
+
+cat("Matched words:", nrow(comparison), "\n")
+cat("CHILDES words with no CDI match:", length(childes_unmatched), "\n")
+print(childes_unmatched)
+cat("CDI words with no CHILDES match:", length(cdi_unmatched), "\n")
+print(cdi_unmatched)
+
+comparison
+```
+
+# Validation Statistics
+
+```{r validationStats}
+thresholds <- c("age_above_0.1", "age_above_0.15", "age_above_0.2")
+
+cor_results <- map_dfr(thresholds, function(t) {
+  pear <- cor.test(comparison$Estimate, comparison[[t]], method = "pearson")
+  spear <- cor.test(comparison$Estimate, comparison[[t]], method = "spearman")
+  diff <- comparison$Estimate - comparison[[t]]
+  tibble(
+    cdi_threshold = t,
+    pearson_r   = unname(pear$estimate),
+    pearson_p   = pear$p.value,
+    spearman_rho = unname(spear$estimate),
+    spearman_p   = spear$p.value,
+    mean_abs_diff = mean(abs(diff)),
+    rmse = sqrt(mean(diff^2))
+  )
+})
+
+cor_results
+```
+
+```{r lmModel}
+lm_fit <- lm(Estimate ~ age_above_0.15, data = comparison)
+glance(lm_fit)
+tidy(lm_fit)
+```
+
+# Comparison Plot
+
+```{r comparisonPlot, fig.width=8, fig.height=7}
+r_annotation <- sprintf("Pearson r = %.2f, Spearman rho = %.2f",
+                         cor_results$pearson_r[cor_results$cdi_threshold == "age_above_0.15"],
+                         cor_results$spearman_rho[cor_results$cdi_threshold == "age_above_0.15"])
+
+validation_plot <- ggplot(comparison, aes(x = age_above_0.15, y = Estimate)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0, colour = "grey70") +
+  geom_errorbarh(aes(xmin = age_above_0.1, xmax = age_above_0.2), height = 0, colour = "grey70") +
+  geom_point(colour = "steelblue") +
+  geom_text_repel(aes(label = word), size = 3, max.overlaps = 30) +
+  annotate("text", x = -Inf, y = Inf, label = r_annotation, hjust = -0.05, vjust = 1.5, size = 4) +
+  labs(
+    x = "CDI onset age (months, proportion producing >= 0.15; whiskers = 0.1-0.2 range)",
+    y = "CHILDES age of production (months, Gompertz lag estimate; whiskers = 95% CI)",
+    title = "CHILDES growth-curve estimates vs. CDI onset ages"
+  ) +
+  theme_bw()
+
+validation_plot
+```
+
+# Save Outputs
+
+```{r saveOutputs}
+write_csv(comparison, "cdi_childes_comparison.csv")
+ggsave("cdi_validation_plot.png", validation_plot, width = 8, height = 7, dpi = 150)
+```
