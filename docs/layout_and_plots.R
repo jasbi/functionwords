@@ -473,8 +473,8 @@ ui <- fluidPage(
         tags$p(class = "section-outline-title", "Table of Contents"),
         tags$ul(
           class = "section-outline-list",
-          tags$li(tags$a(href = "#section-growth", "Growth Curves")),
-          tags$li(tags$a(href = "#section-trajectories", "Child Trajectory Plots")),
+          tags$li(tags$a(href = "#section-growth", "Population Curves")),
+          tags$li(tags$a(href = "#section-trajectories", "Trajectories for Individual Children")),
           tags$li(tags$a(href = "#section-literature", "Relevant Literature"))
         )
       )
@@ -484,7 +484,7 @@ ui <- fluidPage(
       class = "app-main",
       tags$div(
         class = "section-block",
-        tags$h3(id = "section-growth", class = "section-heading", "Growth Curves"),
+        tags$h3(id = "section-growth", class = "section-heading", "Population Curves"),
         plotlyOutput("functionWordGrowthCurvePlot", height = "420px"),
         tags$div(
           class = "plot-toolbar",
@@ -505,27 +505,17 @@ ui <- fluidPage(
 
       tags$div(
         class = "section-block",
-        tags$h3(id = "section-trajectories", class = "section-heading", "Child Trajectory Plots"),
+        tags$h3(id = "section-trajectories", class = "section-heading", "Trajectories for Individual Children"),
         div(
           class = "trajectory-controls well",
           selectInput(
             "plot_mode",
             "Overlay Mode",
             choices = c(
-              "Single Child" = "single",
               "Overlay Selected Children" = "multi_select",
               "Overlay Top Ten Children" = "all_top_ten"
             ),
             selected = "all_top_ten"
-          ),
-          conditionalPanel(
-            condition = "input.plot_mode == 'single'",
-            selectInput(
-              "selected_child_display",
-              "Select Target Child",
-              choices = child_list_all,
-              selected = child_list_all[[1]]
-            )
           ),
           conditionalPanel(
             condition = "input.plot_mode == 'multi_select'",
@@ -604,22 +594,11 @@ server <- function(input, output, session) {
       selected_rows <- child_name_map %>% filter(display_name %in% wanted)
       dat <- dat %>%
         inner_join(selected_rows, by = c("collection_name", "corpus_name", "target_child_name"))
-    } else if (input$plot_mode == "all_top_ten") {
+    } else {
       kids <- top_ten_children %>%
         select(collection_name, corpus_name, target_child_name)
       dat <- dat %>%
         inner_join(kids, by = c("collection_name", "corpus_name", "target_child_name"))
-    } else {
-      req(input$selected_child_display)
-      sel <- child_name_map %>%
-        filter(display_name == input$selected_child_display) %>%
-        slice(1)
-      dat <- dat %>%
-        filter(
-          collection_name == sel$collection_name,
-          corpus_name == sel$corpus_name,
-          target_child_name == sel$target_child_name
-        )
     }
     dat <- dat %>% arrange(collection_name, corpus_name, target_child_name, target_child_age)
     dat$child_label <- paste0(dat$target_child_name, " (", dat$collection_name, " | ", dat$corpus_name, ")")
@@ -668,7 +647,6 @@ server <- function(input, output, session) {
   }) %>% bindCache(
     input$selected_function_word,
     input$plot_mode,
-    input$selected_child_display,
     input$selected_children_multi,
     input$show_points_trajectory
   )

@@ -1,8 +1,13 @@
 library(arrow)
+library(dplyr)
+library(tidyr)
 
-word_model_db_path <- "../processed_data/word_model_db.RDS"
+docs_dir <- if (dir.exists("docs")) "docs" else "."
+docs_dir <- normalizePath(docs_dir, winslash = "/", mustWork = FALSE)
+
+word_model_db_path <- file.path(docs_dir, "word_model_db.RDS")
 if (!file.exists(word_model_db_path)) {
-  stop("Missing ", word_model_db_path, ". Run processing/englishPlotsAndCurves_refactored.Rmd first.")
+  stop("Missing ", word_model_db_path, ".")
 }
 
 word_model_db <- readRDS(word_model_db_path)
@@ -11,7 +16,7 @@ if (length(function_words) == 0) {
   stop("No function words found in ", word_model_db_path)
 }
 
-processed_tokens_path <- "../processed_data/english_tokens_contract_processed.feather"
+processed_tokens_path <- file.path(docs_dir, "english_tokens_contract_processed.feather")
 if (!file.exists(processed_tokens_path)) {
   stop("Missing ", processed_tokens_path, ".")
 }
